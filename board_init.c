@@ -222,7 +222,7 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
 #else
     if (landscape) {
         /* Landscape on standard SPI board: LVGL sees swapped dimensions.
-         * Rotation is handled by esp_lvgl_port sw_rotate. */
+         * Panel hardware handles rotation via MADCTL (swap_xy + mirror). */
         lvgl_hres = BOARD_LCD_V_RES;  /* 480 */
         lvgl_vres = BOARD_LCD_H_RES;  /* 320 */
     } else {
@@ -249,14 +249,15 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
             .direct_mode = true,
         },
 #else
+        /* Hardware rotation via panel MADCTL — no sw_rotate needed.
+         * Values from Waveshare ESP-IDF demo (90° landscape config). */
         .rotation = {
             .swap_xy = landscape ? true : false,
             .mirror_x = landscape ? true : false,
-            .mirror_y = false,
+            .mirror_y = landscape ? true : false,
         },
         .flags = {
             .buff_spiram = true,
-            .sw_rotate = landscape ? true : false,
             .swap_bytes = true,
         },
 #endif
@@ -354,8 +355,10 @@ int board_init(const board_app_config_t *app_cfg,
 #elif BOARD_TOUCH_DRIVER == TOUCH_FT6336
     touch_handle = board_touch_ft6336_init(i2c_bus, touch_x_max, touch_y_max);
     if (landscape) {
+        /* Values from Waveshare demo 90° rotation config */
         touch_handle->config.flags.swap_xy = 1;
-        touch_handle->config.flags.mirror_x = 1;
+        touch_handle->config.flags.mirror_x = 0;
+        touch_handle->config.flags.mirror_y = 1;
     }
 #elif BOARD_TOUCH_DRIVER == TOUCH_CST816D
     touch_handle = board_touch_cst816d_init(i2c_bus, touch_x_max, touch_y_max);
