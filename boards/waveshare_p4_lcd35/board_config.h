@@ -33,6 +33,7 @@
 #define BOARD_DISPLAY_QSPI              0
 #define BOARD_DISPLAY_QUIRK_RASET_BUG   0
 #define BOARD_DISPLAY_DIRECT_MODE       0
+#define BOARD_DISPLAY_INVERT_COLOR      0
 
 /* ── IO Expander ── */
 #define BOARD_HAS_IO_EXPANDER   0
