@@ -211,7 +211,8 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
     int lvgl_hres, lvgl_vres;
 #if BOARD_DISPLAY_QUIRK_RASET_BUG
     if (landscape) {
-        /* Landscape on RASET board: LVGL sees rotated dimensions */
+        /* Landscape on RASET board: LVGL sees rotated dimensions.
+         * Rotation is handled by the custom flush callback. */
         lvgl_hres = BOARD_LCD_V_RES;  /* 480 */
         lvgl_vres = BOARD_LCD_H_RES;  /* 320 */
     } else {
@@ -219,8 +220,15 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
         lvgl_vres = BOARD_LCD_V_RES;  /* 480 */
     }
 #else
-    lvgl_hres = BOARD_LCD_H_RES;
-    lvgl_vres = BOARD_LCD_V_RES;
+    if (landscape) {
+        /* Landscape on standard SPI board: LVGL sees swapped dimensions.
+         * Rotation is handled by esp_lvgl_port sw_rotate. */
+        lvgl_hres = BOARD_LCD_V_RES;  /* 480 */
+        lvgl_vres = BOARD_LCD_H_RES;  /* 320 */
+    } else {
+        lvgl_hres = BOARD_LCD_H_RES;  /* 320 */
+        lvgl_vres = BOARD_LCD_V_RES;  /* 480 */
+    }
 #endif
 
     lvgl_port_display_cfg_t disp_cfg = {
@@ -235,14 +243,23 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
         .hres = lvgl_hres,
         .vres = lvgl_vres,
         .color_format = LV_COLOR_FORMAT_RGB565,
-        .flags = {
 #if BOARD_DISPLAY_DIRECT_MODE
+        .flags = {
             .buff_spiram = true,
             .direct_mode = true,
-#else
-            .swap_bytes = true,
-#endif
         },
+#else
+        .rotation = {
+            .swap_xy = landscape ? true : false,
+            .mirror_x = landscape ? true : false,
+            .mirror_y = false,
+        },
+        .flags = {
+            .buff_spiram = true,
+            .sw_rotate = landscape ? true : false,
+            .swap_bytes = true,
+        },
+#endif
     };
 
     /* CRITICAL: Hold LVGL lock across display add + callback overrides.
@@ -336,6 +353,10 @@ int board_init(const board_app_config_t *app_cfg,
     }
 #elif BOARD_TOUCH_DRIVER == TOUCH_FT6336
     touch_handle = board_touch_ft6336_init(i2c_bus, touch_x_max, touch_y_max);
+    if (landscape) {
+        touch_handle->config.flags.swap_xy = 1;
+        touch_handle->config.flags.mirror_x = 1;
+    }
 #elif BOARD_TOUCH_DRIVER == TOUCH_CST816D
     touch_handle = board_touch_cst816d_init(i2c_bus, touch_x_max, touch_y_max);
 #endif
