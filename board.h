@@ -21,6 +21,10 @@
 #define PMIC_AXP2101        1
 
 /* ── Resolution (set in board_init.c from board_config.h) ── */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern const int LCD_H_RES_VAL;
 extern const int LCD_V_RES_VAL;
 
@@ -48,5 +52,9 @@ int board_init(const board_app_config_t *app_cfg,
  * Desktop: SDL event pump.
  */
 void board_run(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 /* No app_main(), no game_main() — each project defines its own entry point */
