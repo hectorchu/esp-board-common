@@ -12,8 +12,6 @@ set(SRC_FILES
     "board_camera.c"
     "board_sdcard.c"
     "board_audio.c"
-    "board_rtc.c"
-    "board_imu.c"
 )
 
 # All dependencies listed unconditionally. The #if BOARD_HAS_* guards in C source
@@ -29,6 +27,7 @@ idf_component_register(
              "XPowersLib"
              "fatfs" "nvs_flash"
              "esp32-camera" "espressif__esp_codec_dev"
+             "waveshare__pcf85063a" "waveshare__qmi8658"
 )
 
 # Board config header: selected at build time via BOARD variable.

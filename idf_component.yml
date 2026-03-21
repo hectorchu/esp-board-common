@@ -4,3 +4,5 @@ dependencies:
   espressif/esp_lcd_st7796: "1.4.0"
   espressif/esp_lcd_touch_ft5x06: "1.1.0"
   espressif/esp_lcd_touch_cst816s: "1.1.0"
+  waveshare/pcf85063a: "1.1.1"
+  waveshare/qmi8658: "1.0.1"
