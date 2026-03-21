@@ -253,10 +253,15 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
         },
 #else
         /* Hardware rotation via panel MADCTL — no sw_rotate needed.
-         * Values from Waveshare ESP-IDF demo (90° landscape config). */
+         * Landscape values from Waveshare ESP-IDF demo (90° config).
+         * Portrait mirror_x from board config (some panels need it). */
         .rotation = {
             .swap_xy = landscape ? true : false,
+#if defined(BOARD_DISPLAY_MIRROR_X) && BOARD_DISPLAY_MIRROR_X
+            .mirror_x = true,
+#else
             .mirror_x = landscape ? true : false,
+#endif
             .mirror_y = landscape ? true : false,
         },
         .flags = {
