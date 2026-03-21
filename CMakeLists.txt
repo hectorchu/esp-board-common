@@ -16,6 +16,7 @@ set(SRC_FILES
     "board_imu.c"
 )
 
+# Core display/touch/PMIC dependencies (always needed)
 set(REQUIRES
     "esp_lcd" "driver" "esp_adc" "esp_lvgl_port" "lvgl"
     "espressif__esp_lcd_axs15231b" "espressif__esp_io_expander_tca9554"
@@ -25,11 +26,15 @@ set(REQUIRES
     "fatfs" "nvs_flash"
 )
 
-# Conditionally add camera and audio codec dependencies
-if(TARGET __idf_esp32-camera)
+# Optional peripheral dependencies — add via CMake option from consuming project.
+# Camera and audio codec are large components not all projects need.
+option(BOARD_COMMON_HAS_CAMERA "Include esp32-camera component" OFF)
+option(BOARD_COMMON_HAS_AUDIO "Include esp_codec_dev component" OFF)
+
+if(BOARD_COMMON_HAS_CAMERA)
     list(APPEND REQUIRES "esp32-camera")
 endif()
-if(TARGET __idf_espressif__esp_codec_dev)
+if(BOARD_COMMON_HAS_AUDIO)
     list(APPEND REQUIRES "espressif__esp_codec_dev")
 endif()
 
