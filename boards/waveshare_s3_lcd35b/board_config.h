@@ -85,8 +85,8 @@
 #define BOARD_PIN_SD_CMD            GPIO_NUM_10
 #define BOARD_PIN_SD_D0             GPIO_NUM_9
 
-/* ── Audio (ES8311) ── */
-#define BOARD_HAS_AUDIO             1
+/* ── Audio (ES8311) — disabled by default, enable when needed ── */
+#define BOARD_HAS_AUDIO             0
 #define BOARD_PIN_I2S_MCK           GPIO_NUM_44
 #define BOARD_PIN_I2S_BCK           GPIO_NUM_13
 #define BOARD_PIN_I2S_LRCK          GPIO_NUM_15
