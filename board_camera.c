@@ -32,7 +32,7 @@ void board_camera_init(i2c_port_num_t i2c_port)
     config.pin_pwdn = BOARD_PIN_CAM_PWDN;
     config.pin_reset = BOARD_PIN_CAM_RESET;
     config.xclk_freq_hz = BOARD_CAM_XCLK_FREQ;
-    config.frame_size = FRAMESIZE_320X480;
+    config.frame_size = FRAMESIZE_HVGA;  /* 480x320 */
     config.pixel_format = PIXFORMAT_RGB565;
     config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     config.fb_location = CAMERA_FB_IN_PSRAM;
