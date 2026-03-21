@@ -63,6 +63,9 @@ static esp_lcd_panel_io_handle_t io_handle = NULL;
 static esp_lcd_panel_handle_t panel_handle = NULL;
 static esp_lcd_touch_handle_t touch_handle = NULL;
 
+/* Accessor for diagnostic/testing (bypasses LVGL) */
+esp_lcd_panel_handle_t board_get_panel_handle(void) { return panel_handle; }
+
 #if BOARD_HAS_IO_EXPANDER
 static esp_io_expander_handle_t expander_handle = NULL;
 #endif
