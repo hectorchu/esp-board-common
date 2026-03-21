@@ -16,32 +16,19 @@ set(SRC_FILES
     "board_imu.c"
 )
 
-# Core display/touch/PMIC dependencies (always needed)
-set(REQUIRES
-    "esp_lcd" "driver" "esp_adc" "esp_lvgl_port" "lvgl"
-    "espressif__esp_lcd_axs15231b" "espressif__esp_io_expander_tca9554"
-    "espressif__esp_lcd_st7796"
-    "espressif__esp_lcd_touch_ft5x06" "espressif__esp_lcd_touch_cst816s"
-    "XPowersLib"
-    "fatfs" "nvs_flash"
-)
-
-# Optional peripheral dependencies — add via CMake option from consuming project.
-# Camera and audio codec are large components not all projects need.
-option(BOARD_COMMON_HAS_CAMERA "Include esp32-camera component" OFF)
-option(BOARD_COMMON_HAS_AUDIO "Include esp_codec_dev component" OFF)
-
-if(BOARD_COMMON_HAS_CAMERA)
-    list(APPEND REQUIRES "esp32-camera")
-endif()
-if(BOARD_COMMON_HAS_AUDIO)
-    list(APPEND REQUIRES "espressif__esp_codec_dev")
-endif()
-
+# All dependencies listed unconditionally. The #if BOARD_HAS_* guards in C source
+# compile out unused peripheral code when the board config doesn't define them.
+# The components just need to be present for include path resolution.
 idf_component_register(
     SRCS ${SRC_FILES}
     INCLUDE_DIRS "."
-    REQUIRES ${REQUIRES}
+    REQUIRES "esp_lcd" "driver" "esp_adc" "esp_lvgl_port" "lvgl"
+             "espressif__esp_lcd_axs15231b" "espressif__esp_io_expander_tca9554"
+             "espressif__esp_lcd_st7796"
+             "espressif__esp_lcd_touch_ft5x06" "espressif__esp_lcd_touch_cst816s"
+             "XPowersLib"
+             "fatfs" "nvs_flash"
+             "esp32-camera" "espressif__esp_codec_dev"
 )
 
 # Board config header: selected at build time via BOARD variable.
