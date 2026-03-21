@@ -6,3 +6,4 @@ dependencies:
   espressif/esp_lcd_touch_cst816s: "1.1.0"
   waveshare/pcf85063a: "1.1.1"
   waveshare/qmi8658: "1.0.1"
+  espressif/esp32-camera: "~2.1.5"

@@ -26,7 +26,7 @@ idf_component_register(
              "espressif__esp_lcd_touch_ft5x06" "espressif__esp_lcd_touch_cst816s"
              "XPowersLib"
              "fatfs" "nvs_flash"
-             "esp32-camera" "espressif__esp_codec_dev"
+             "espressif__esp32-camera" "espressif__esp_codec_dev"
              "waveshare__pcf85063a" "waveshare__qmi8658"
 )
 
