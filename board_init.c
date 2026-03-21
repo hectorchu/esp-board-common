@@ -309,17 +309,15 @@ int board_init(const board_app_config_t *app_cfg,
     i2c_master_bus_handle_t i2c_bus = board_i2c_init(
         BOARD_PIN_I2C_SDA, BOARD_PIN_I2C_SCL, BOARD_I2C_PORT);
 
-    /* Step 2: IO expander (if present) */
+    /* Step 2: IO expander (if present — resets display hardware) */
 #if BOARD_HAS_IO_EXPANDER
     io_expander_init(i2c_bus);
 #endif
 
-    /* Step 3: PMIC (if present) */
-#if BOARD_HAS_PMIC
-    board_pmic_init(i2c_bus);
-#endif
-
-    /* Step 4: Display */
+    /* Step 3: Display — must be initialized BEFORE PMIC.
+     * The PMIC init changes voltage rails; doing it between the IO expander
+     * reset and the SPI panel init can put the display in a bad state.
+     * Matches Waveshare demo order: IO expander → Display → PMIC. */
 #if BOARD_DISPLAY_DRIVER == DISPLAY_AXS15231B
     board_display_axs15231b_init(&io_handle, &panel_handle,
                                   BOARD_LCD_H_RES * BOARD_LCD_V_RES);
@@ -329,6 +327,11 @@ int board_init(const board_app_config_t *app_cfg,
 #elif BOARD_DISPLAY_DRIVER == DISPLAY_ST7789
     board_display_st7789_init(&io_handle, &panel_handle,
                                BOARD_LCD_H_RES * BOARD_LCD_V_RES);
+#endif
+
+    /* Step 4: PMIC (if present — after display is fully initialized) */
+#if BOARD_HAS_PMIC
+    board_pmic_init(i2c_bus);
 #endif
 
     /* Step 5: Touch */
