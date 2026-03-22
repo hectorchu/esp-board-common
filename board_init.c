@@ -237,11 +237,11 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
     lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = io_handle,
         .panel_handle = panel_handle,
-#if BOARD_DISPLAY_DIRECT_MODE
+#if BOARD_DISPLAY_QUIRK_RASET_BUG
+        /* RASET boards: full-frame direct_mode with custom flush callback. */
         .buffer_size = lvgl_hres * lvgl_vres,
 #else
-        /* Half-screen SPIRAM buffer with double buffering for smooth rendering.
-         * LVGL renders into one buffer while the other is being DMA'd to the panel. */
+        /* Standard SPI boards: half-screen double-buffered partial updates. */
         .buffer_size = lvgl_hres * lvgl_vres / 2,
         .double_buffer = true,
 #endif
@@ -249,15 +249,13 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
         .hres = lvgl_hres,
         .vres = lvgl_vres,
         .color_format = LV_COLOR_FORMAT_RGB565,
-#if BOARD_DISPLAY_DIRECT_MODE
+#if BOARD_DISPLAY_QUIRK_RASET_BUG
         .flags = {
             .buff_spiram = true,
             .direct_mode = true,
         },
 #else
-        /* Hardware rotation via panel MADCTL — no sw_rotate needed.
-         * Landscape values from Waveshare ESP-IDF demo (90° config).
-         * Portrait mirror_x from board config (some panels need it). */
+        /* Hardware rotation via panel MADCTL. */
         .rotation = {
             .swap_xy = landscape ? true : false,
 #if defined(BOARD_DISPLAY_MIRROR_X) && BOARD_DISPLAY_MIRROR_X
@@ -287,7 +285,6 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
     lv_display_set_flush_cb(*disp_out,
                             landscape ? landscape_flush_cb : portrait_flush_cb);
 
-    /* Register DMA completion callback */
     const esp_lcd_panel_io_callbacks_t io_cbs = {
         .on_color_trans_done = flush_ready_cb,
     };
@@ -328,13 +325,13 @@ int board_init(const board_app_config_t *app_cfg,
      * Matches Waveshare demo order: IO expander → Display → PMIC. */
 #if BOARD_DISPLAY_DRIVER == DISPLAY_AXS15231B
     board_display_axs15231b_init(&io_handle, &panel_handle,
-                                  BOARD_LCD_H_RES * BOARD_LCD_V_RES);
+                                  BOARD_LCD_H_RES * BOARD_LCD_V_RES * sizeof(lv_color16_t));
 #elif BOARD_DISPLAY_DRIVER == DISPLAY_ST7796
     board_display_st7796_init(&io_handle, &panel_handle,
-                               BOARD_LCD_H_RES * BOARD_LCD_V_RES);
+                               BOARD_LCD_H_RES * BOARD_LCD_V_RES * sizeof(lv_color16_t));
 #elif BOARD_DISPLAY_DRIVER == DISPLAY_ST7789
     board_display_st7789_init(&io_handle, &panel_handle,
-                               BOARD_LCD_H_RES * BOARD_LCD_V_RES);
+                               BOARD_LCD_H_RES * BOARD_LCD_V_RES * sizeof(lv_color16_t));
 #endif
 
     /* Step 4: PMIC (if present — after display is fully initialized) */
