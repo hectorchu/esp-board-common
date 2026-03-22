@@ -12,22 +12,35 @@
 #include "esp_lcd_st7796.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_attr.h"
 
 static const char *TAG = "display_st7796";
 
 /**
- * Waveshare ESP32-S3 Touch LCD 3.5 requires a software restart after
- * SPI panel IO initialization on first power-on. Without this, the SPI
- * peripheral cannot communicate with the ST7796 panel. This is a
- * hardware-level workaround from the Waveshare demo code.
+ * Waveshare ST7796 boards require a full ESP software restart after the
+ * SPI bus and panel IO are initialized. The restart must happen AFTER
+ * spi_bus_initialize + esp_lcd_new_panel_io_spi — some GPIO/SPI hardware
+ * state from this first init persists across esp_restart() and is needed
+ * for hardware SPI to work on the second boot.
+ *
+ * Uses RTC_NOINIT memory (survives esp_restart but not power-on or
+ * hardware resets) to ensure exactly one restart per reset cycle.
+ *
+ * All 8 Waveshare ESP-IDF demos for this board use the same workaround.
  */
-static void soft_reset_once(void)
+#define SPI_READY_MAGIC 0x53504900
+RTC_NOINIT_ATTR static uint32_t spi_ready_flag;
+
+static void soft_reset_after_spi_init(void)
 {
-    if (esp_reset_reason() == ESP_RST_POWERON) {
-        ESP_LOGI(TAG, "First power-on — restarting for SPI panel IO");
+    if (spi_ready_flag != SPI_READY_MAGIC) {
+        spi_ready_flag = SPI_READY_MAGIC;
+        ESP_LOGI(TAG, "SPI display workaround — restarting");
         fflush(stdout);
         esp_restart();
     }
+    /* Clear flag so next hardware reset triggers the restart again */
+    spi_ready_flag = 0;
 }
 
 /**
@@ -81,9 +94,9 @@ void board_display_st7796_init(esp_lcd_panel_io_handle_t *io_handle,
     io_config.trans_queue_depth = 10;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)BOARD_SPI_HOST, &io_config, io_handle));
 
-    /* Waveshare ST7796 boards require a restart after SPI panel IO
-     * creation on first power-on. */
-    soft_reset_once();
+    /* Must restart AFTER SPI bus + panel IO are configured — hardware state
+     * from this init persists across esp_restart() and fixes SPI on next boot */
+    soft_reset_after_spi_init();
 
     st7796_vendor_config_t vendor_config = {};
     vendor_config.init_cmds = waveshare_st7796_init_cmds;
