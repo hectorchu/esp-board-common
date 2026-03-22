@@ -240,7 +240,10 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
 #if BOARD_DISPLAY_DIRECT_MODE
         .buffer_size = lvgl_hres * lvgl_vres,
 #else
-        .buffer_size = BOARD_LCD_H_RES * 40,
+        /* Half-screen SPIRAM buffer with double buffering for smooth rendering.
+         * LVGL renders into one buffer while the other is being DMA'd to the panel. */
+        .buffer_size = lvgl_hres * lvgl_vres / 2,
+        .double_buffer = true,
 #endif
         .trans_size = 0,
         .hres = lvgl_hres,
