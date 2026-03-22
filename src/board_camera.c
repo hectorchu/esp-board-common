@@ -6,11 +6,17 @@
 #include "board_camera.h"
 #include "esp_camera.h"
 #include "esp_log.h"
+#include "driver/ledc.h"
 
 static const char *TAG = "board_camera";
 
-void board_camera_init(i2c_port_num_t i2c_port)
+void board_camera_init(i2c_port_num_t i2c_port, framesize_t frame_size)
 {
+    /* Force-stop the LEDC channel before esp_camera_init configures it.
+     * LEDC registers in the RTC domain can retain stale state across
+     * brief power cycles, causing the XCLK to not start reliably. */
+    ledc_stop(LEDC_LOW_SPEED_MODE, BOARD_CAM_LEDC_CHANNEL, 0);
+
     camera_config_t config;
     config.ledc_channel = BOARD_CAM_LEDC_CHANNEL;
     config.ledc_timer = BOARD_CAM_LEDC_TIMER;
@@ -32,7 +38,7 @@ void board_camera_init(i2c_port_num_t i2c_port)
     config.pin_pwdn = BOARD_PIN_CAM_PWDN;
     config.pin_reset = BOARD_PIN_CAM_RESET;
     config.xclk_freq_hz = BOARD_CAM_XCLK_FREQ;
-    config.frame_size = FRAMESIZE_HVGA;  /* 480x320 */
+    config.frame_size = frame_size;
     config.pixel_format = PIXFORMAT_RGB565;
     config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     config.fb_location = CAMERA_FB_IN_PSRAM;
