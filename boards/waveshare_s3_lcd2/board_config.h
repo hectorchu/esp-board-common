@@ -60,8 +60,18 @@
 #define BOARD_LVGL_TIMER_PERIOD_MS  5
 
 /* ── Peripherals not present ── */
+#ifndef BOARD_HAS_CAMERA
 #define BOARD_HAS_CAMERA            0
+#endif
+#ifndef BOARD_HAS_SDCARD
 #define BOARD_HAS_SDCARD            0
+#endif
+#ifndef BOARD_HAS_AUDIO
 #define BOARD_HAS_AUDIO             0
+#endif
+#ifndef BOARD_HAS_RTC
 #define BOARD_HAS_RTC               0
+#endif
+#ifndef BOARD_HAS_IMU
 #define BOARD_HAS_IMU               0
+#endif

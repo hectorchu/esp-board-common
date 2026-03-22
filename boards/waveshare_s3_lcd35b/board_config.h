@@ -60,7 +60,9 @@
 #define BOARD_LINES_PER_BAND    80
 
 /* ── Camera (DVP) ── */
+#ifndef BOARD_HAS_CAMERA
 #define BOARD_HAS_CAMERA            1
+#endif
 #define BOARD_CAMERA_INTERFACE      CAMERA_DVP
 #define BOARD_PIN_CAM_XCLK          GPIO_NUM_38
 #define BOARD_PIN_CAM_PCLK          GPIO_NUM_41
@@ -81,13 +83,17 @@
 #define BOARD_CAM_LEDC_CHANNEL     LEDC_CHANNEL_1
 
 /* ── SD Card (SDMMC) ── */
+#ifndef BOARD_HAS_SDCARD
 #define BOARD_HAS_SDCARD            1
+#endif
 #define BOARD_PIN_SD_CLK            GPIO_NUM_11
 #define BOARD_PIN_SD_CMD            GPIO_NUM_10
 #define BOARD_PIN_SD_D0             GPIO_NUM_9
 
 /* ── Audio (ES8311) — disabled by default, enable when needed ── */
+#ifndef BOARD_HAS_AUDIO
 #define BOARD_HAS_AUDIO             0
+#endif
 #define BOARD_PIN_I2S_MCK           GPIO_NUM_44
 #define BOARD_PIN_I2S_BCK           GPIO_NUM_13
 #define BOARD_PIN_I2S_LRCK          GPIO_NUM_15
@@ -95,7 +101,11 @@
 #define BOARD_PIN_I2S_DIN           GPIO_NUM_14
 
 /* ── RTC (PCF85063) ── */
+#ifndef BOARD_HAS_RTC
 #define BOARD_HAS_RTC               1
+#endif
 
 /* ── IMU (QMI8658) ── */
+#ifndef BOARD_HAS_IMU
 #define BOARD_HAS_IMU               1
+#endif

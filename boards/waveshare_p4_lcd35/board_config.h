@@ -59,14 +59,18 @@
 #define BOARD_LVGL_TIMER_PERIOD_MS  5
 
 /* ── Camera (MIPI-CSI, OV5647) ── */
+#ifndef BOARD_HAS_CAMERA
 #define BOARD_HAS_CAMERA            1
+#endif
 #define BOARD_CAMERA_INTERFACE      CAMERA_CSI
 #define BOARD_PIN_CAM_SCCB_SDA      GPIO_NUM_31
 #define BOARD_PIN_CAM_SCCB_SCL      GPIO_NUM_34
 #define BOARD_CAM_SCCB_I2C_PORT     1   /* Port 0 used by main I2C bus */
 
 /* ── SD Card (4-bit SDMMC) ── */
+#ifndef BOARD_HAS_SDCARD
 #define BOARD_HAS_SDCARD            1
+#endif
 #define BOARD_SD_WIDTH              4
 #define BOARD_PIN_SD_CLK            GPIO_NUM_43
 #define BOARD_PIN_SD_CMD            GPIO_NUM_44
@@ -76,7 +80,9 @@
 #define BOARD_PIN_SD_D3             GPIO_NUM_42
 
 /* ── Audio (ES8311) ── */
+#ifndef BOARD_HAS_AUDIO
 #define BOARD_HAS_AUDIO             1
+#endif
 #define BOARD_PIN_I2S_MCK           GPIO_NUM_13
 #define BOARD_PIN_I2S_BCK           GPIO_NUM_12
 #define BOARD_PIN_I2S_LRCK          GPIO_NUM_10
@@ -85,5 +91,9 @@
 #define BOARD_PIN_PA                GPIO_NUM_53
 
 /* ── RTC / IMU ── */
+#ifndef BOARD_HAS_RTC
 #define BOARD_HAS_RTC               0
+#endif
+#ifndef BOARD_HAS_IMU
 #define BOARD_HAS_IMU               0
+#endif
