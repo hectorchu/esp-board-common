@@ -53,6 +53,22 @@ int board_init(const board_app_config_t *app_cfg,
  */
 void board_run(void);
 
+/**
+ * Set the maximum LVGL render interval.
+ *
+ * Creates an internal LVGL timer that forces lv_timer_handler() to
+ * return within the specified interval, overriding the default
+ * BOARD_LVGL_MAX_SLEEP_MS without patching esp_lvgl_port.
+ *
+ * Call with a small value (e.g. 10) for real-time camera/animation,
+ * or 0 to revert to the default idle behavior.
+ *
+ * Must hold the LVGL port lock when calling.
+ *
+ * @param interval_ms  Desired render interval in ms, or 0 to disable.
+ */
+void board_set_render_interval_ms(uint32_t interval_ms);
+
 #ifdef __cplusplus
 }
 #endif

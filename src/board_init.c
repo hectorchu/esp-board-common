@@ -393,3 +393,29 @@ void board_run(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
+
+/* ── Dynamic render interval ── */
+
+static lv_timer_t *render_kick_timer = NULL;
+
+static void render_kick_cb(lv_timer_t *timer)
+{
+    /* No-op — the timer's existence keeps lv_timer_handler() returning quickly */
+    (void)timer;
+}
+
+void board_set_render_interval_ms(uint32_t interval_ms)
+{
+    if (interval_ms > 0) {
+        if (render_kick_timer) {
+            lv_timer_set_period(render_kick_timer, interval_ms);
+        } else {
+            render_kick_timer = lv_timer_create(render_kick_cb, interval_ms, NULL);
+        }
+    } else {
+        if (render_kick_timer) {
+            lv_timer_delete(render_kick_timer);
+            render_kick_timer = NULL;
+        }
+    }
+}
