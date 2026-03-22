@@ -1,17 +1,17 @@
 set(SRC_FILES
-    "board_init.c"
-    "board_i2c.c"
-    "board_backlight.c"
-    "board_pmic.cpp"
-    "board_display_axs15231b.c"
-    "board_display_st7796.c"
-    "board_display_st7789.c"
-    "board_touch_axs15231b.c"
-    "board_touch_ft6336.c"
-    "board_touch_cst816d.c"
-    "board_camera.c"
-    "board_sdcard.c"
-    "board_audio.c"
+    "src/board_init.c"
+    "src/board_i2c.c"
+    "src/board_backlight.c"
+    "src/board_pmic.cpp"
+    "src/board_display_axs15231b.c"
+    "src/board_display_st7796.c"
+    "src/board_display_st7789.c"
+    "src/board_touch_axs15231b.c"
+    "src/board_touch_ft6336.c"
+    "src/board_touch_cst816d.c"
+    "src/board_camera.c"
+    "src/board_sdcard.c"
+    "src/board_audio.c"
 )
 
 # All dependencies listed unconditionally. The #if BOARD_HAS_* guards in C source
@@ -19,7 +19,7 @@ set(SRC_FILES
 # The components just need to be present for include path resolution.
 idf_component_register(
     SRCS ${SRC_FILES}
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS "src"
     REQUIRES "esp_lcd" "driver" "esp_adc" "esp_lvgl_port" "lvgl"
              "espressif__esp_lcd_axs15231b" "espressif__esp_io_expander_tca9554"
              "espressif__esp_lcd_st7796"
@@ -33,9 +33,9 @@ idf_component_register(
 # Board config header: selected at build time via BOARD variable.
 # Consumer project sets BOARD_CONFIG_DIR to the directory containing board_config.h.
 if(DEFINED BOARD_CONFIG_DIR AND EXISTS "${BOARD_CONFIG_DIR}")
-    target_include_directories(${COMPONENT_LIB} PRIVATE "${BOARD_CONFIG_DIR}")
+    target_include_directories(${COMPONENT_LIB} PUBLIC "${BOARD_CONFIG_DIR}")
 elseif(DEFINED BOARD AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD}")
-    target_include_directories(${COMPONENT_LIB} PRIVATE
+    target_include_directories(${COMPONENT_LIB} PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD}"
     )
 else()
