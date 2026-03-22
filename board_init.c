@@ -375,9 +375,10 @@ int board_init(const board_app_config_t *app_cfg,
     touch_handle = board_touch_cst816d_init(i2c_bus, touch_x_max, touch_y_max);
 #endif
 
-    /* Step 6: Backlight */
+    /* Step 6: Backlight — init PWM but keep off (duty=0).
+     * Caller turns it on after rendering the first frame to avoid
+     * a flash of LVGL's default white background. */
     board_backlight_init(BOARD_PIN_LCD_BL);
-    board_backlight_set(100);
 
     /* Step 7: LVGL port */
     lvgl_port_setup(app_cfg, disp, touch_indev);
