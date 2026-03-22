@@ -10,24 +10,43 @@ set(SRC_FILES
     "src/board_touch_ft6336.c"
     "src/board_touch_cst816d.c"
     "src/board_camera.c"
+    "src/board_camera_csi.c"
     "src/board_sdcard.c"
     "src/board_audio.c"
 )
 
-# All dependencies listed unconditionally. The #if BOARD_HAS_* guards in C source
-# compile out unused peripheral code when the board config doesn't define them.
-# The components just need to be present for include path resolution.
+# All dependencies listed unconditionally where possible. The #if BOARD_HAS_*
+# guards in C source compile out unused peripheral code when the board config
+# doesn't define them. The components just need to be present for include path
+# resolution.
+#
+# Camera components are target-conditional: DVP (esp32-camera) for S3,
+# CSI (esp_driver_cam + esp_cam_sensor) for P4.
+set(REQUIRED_COMPONENTS
+    "esp_lcd" "driver" "esp_adc" "esp_lvgl_port" "lvgl"
+    "espressif__esp_lcd_axs15231b" "espressif__esp_io_expander_tca9554"
+    "espressif__esp_lcd_st7796"
+    "espressif__esp_lcd_touch_ft5x06" "espressif__esp_lcd_touch_cst816s"
+    "XPowersLib"
+    "fatfs" "nvs_flash"
+    "espressif__esp_codec_dev"
+    "waveshare__pcf85063a" "waveshare__qmi8658"
+)
+
+# DVP camera (ESP32-S3 and compatible targets)
+if(NOT IDF_TARGET STREQUAL "esp32p4")
+    list(APPEND REQUIRED_COMPONENTS "espressif__esp32-camera")
+endif()
+
+# CSI camera (ESP32-P4)
+if(IDF_TARGET STREQUAL "esp32p4")
+    list(APPEND REQUIRED_COMPONENTS "esp_driver_cam" "espressif__esp_cam_sensor")
+endif()
+
 idf_component_register(
     SRCS ${SRC_FILES}
     INCLUDE_DIRS "src"
-    REQUIRES "esp_lcd" "driver" "esp_adc" "esp_lvgl_port" "lvgl"
-             "espressif__esp_lcd_axs15231b" "espressif__esp_io_expander_tca9554"
-             "espressif__esp_lcd_st7796"
-             "espressif__esp_lcd_touch_ft5x06" "espressif__esp_lcd_touch_cst816s"
-             "XPowersLib"
-             "fatfs" "nvs_flash"
-             "espressif__esp32-camera" "espressif__esp_codec_dev"
-             "waveshare__pcf85063a" "waveshare__qmi8658"
+    REQUIRES ${REQUIRED_COMPONENTS}
 )
 
 # Board config header: selected at build time via BOARD variable.

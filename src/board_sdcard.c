@@ -36,11 +36,20 @@ void board_sdcard_init(void)
     sdmmc_slot_config_t slot_config = {};
     slot_config.cd = SDMMC_SLOT_NO_CD;
     slot_config.wp = SDMMC_SLOT_NO_WP;
+#ifdef BOARD_SD_WIDTH
+    slot_config.width = BOARD_SD_WIDTH;
+#else
     slot_config.width = 1;
+#endif
     slot_config.flags = SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
     slot_config.clk = BOARD_PIN_SD_CLK;
     slot_config.cmd = BOARD_PIN_SD_CMD;
     slot_config.d0 = BOARD_PIN_SD_D0;
+#if defined(BOARD_SD_WIDTH) && BOARD_SD_WIDTH > 1
+    slot_config.d1 = BOARD_PIN_SD_D1;
+    slot_config.d2 = BOARD_PIN_SD_D2;
+    slot_config.d3 = BOARD_PIN_SD_D3;
+#endif
 
     ESP_LOGI(TAG, "Mounting filesystem");
     esp_err_t ret = esp_vfs_fat_sdmmc_mount(mount_point, &host, &slot_config, &mount_config, &card);

@@ -1,7 +1,7 @@
 #include "board.h"
 #include "board_config.h"
 
-#if BOARD_HAS_CAMERA
+#if BOARD_HAS_CAMERA && BOARD_CAMERA_INTERFACE == CAMERA_DVP
 
 #include "board_camera.h"
 #include "esp_camera.h"
@@ -55,4 +55,4 @@ void board_camera_init(i2c_port_num_t i2c_port, framesize_t frame_size)
     s->set_vflip(s, 1);
 }
 
-#endif /* BOARD_HAS_CAMERA */
+#endif /* BOARD_HAS_CAMERA && CAMERA_DVP */

@@ -20,6 +20,9 @@
 
 #define PMIC_AXP2101        1
 
+#define CAMERA_DVP          1
+#define CAMERA_CSI          2
+
 /* ── Resolution (set in board_init.c from board_config.h) ── */
 #ifdef __cplusplus
 extern "C" {

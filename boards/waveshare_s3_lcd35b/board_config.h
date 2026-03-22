@@ -61,6 +61,7 @@
 
 /* ── Camera (DVP) ── */
 #define BOARD_HAS_CAMERA            1
+#define BOARD_CAMERA_INTERFACE      CAMERA_DVP
 #define BOARD_PIN_CAM_XCLK          GPIO_NUM_38
 #define BOARD_PIN_CAM_PCLK          GPIO_NUM_41
 #define BOARD_PIN_CAM_VSYNC         GPIO_NUM_17
