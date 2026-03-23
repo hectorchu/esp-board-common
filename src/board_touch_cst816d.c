@@ -8,6 +8,12 @@
 #include "esp_lcd_touch_cst816s.h"
 #include "esp_log.h"
 
+static const char *TAG = "touch_cst816d";
+
+/* CST816D registers */
+#define CST816_REG_DIS_AUTO_SLEEP   (0xFE)
+#define CST816_REG_IRQ_CTL          (0xFA)
+
 esp_lcd_touch_handle_t board_touch_cst816d_init(i2c_master_bus_handle_t bus,
                                                   uint16_t x_max, uint16_t y_max)
 {
@@ -30,6 +36,22 @@ esp_lcd_touch_handle_t board_touch_cst816d_init(i2c_master_bus_handle_t bus,
 
     esp_lcd_touch_handle_t touch_handle;
     ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_cst816s(touch_io_handle, &tp_cfg, &touch_handle));
+
+    /* Disable auto-sleep to keep the controller in Dynamic Mode (~100Hz).
+     * The CST816D enters Standby Mode after 2 seconds of no touch by default.
+     * Standby scanning is minimal and misses fast swipes entirely.
+     * Power cost is small (~4mA vs ~10uA standby). */
+    esp_lcd_panel_io_tx_param(touch_handle->io, CST816_REG_DIS_AUTO_SLEEP,
+                              (uint8_t[]){0xFF}, 1);
+
+    /* Set interrupt mode to "touch" — generates an interrupt every 10ms
+     * while a finger is present, giving the host continuous coordinate
+     * updates rather than just gesture results. */
+    esp_lcd_panel_io_tx_param(touch_handle->io, CST816_REG_IRQ_CTL,
+                              (uint8_t[]){0x40}, 1);
+
+    ESP_LOGI(TAG, "Overrides applied: auto-sleep disabled, IRQ mode=touch (~100Hz)");
+
     return touch_handle;
 }
 
