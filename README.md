@@ -78,6 +78,25 @@ void app_main(void)
 }
 ```
 
+## Display interfaces
+
+| Interface | Boards | Driver |
+|-----------|--------|--------|
+| SPI | S3 LCD 3.5, S3 LCD 2 | Standard SPI with DMA partial updates |
+| QSPI | S3 LCD 3.5B | Direct mode with RASET workaround |
+| MIPI-DSI | P4 LCD 3.5, P4 LCD 4.3 | DPI video mode with `lvgl_port_add_disp_dsi()`, triple-buffered |
+
+## Camera interfaces
+
+| Interface | Boards | Driver |
+|-----------|--------|--------|
+| DVP | S3 boards | `espressif/esp32-camera` (`esp_camera_fb_get`) |
+| MIPI-CSI | P4 boards | `esp_video` V4L2 layer with ISP pipeline (RAW8 → RGB565) |
+
+Both interfaces use the same unified API (`board_camera_init`, `board_camera_fb_get`, `board_camera_fb_return`). Application code never includes interface-specific headers.
+
+On ESP32-P4 boards, the PPA (Pixel Processing Accelerator) hardware engine provides zero-CPU-cost downscaling from the sensor resolution (800x1280) to the display (480x800). The camera viewfinder app demonstrates this with fullscreen, hardware-accelerated live video.
+
 ## API
 
 ### `board_init()`
@@ -88,9 +107,13 @@ Initializes all hardware in the correct order (I2C, IO expander, display, PMIC, 
 
 Dynamically controls LVGL's render rate. Use a small value (e.g. 10) for real-time camera or animation, or 0 to revert to the default idle behavior. Must hold the LVGL port lock when calling.
 
-### `board_camera_init(i2c_port, frame_size)`
+### `board_camera_init(i2c_bus, width, height)`
 
-Initializes the DVP camera with the specified frame size. Only available on boards with `BOARD_HAS_CAMERA=1`. Includes an LEDC stale-state workaround for reliable probe across power cycles.
+Initializes the camera hardware. Dispatches to DVP or CSI implementation based on `BOARD_CAMERA_INTERFACE`. The `i2c_bus` handle is obtained from `board_i2c_get_handle()` after `board_init()`.
+
+### `board_camera_fb_get(frame, timeout_ms)` / `board_camera_fb_return(frame)`
+
+Synchronous frame capture. `fb_get` blocks until a frame is available; `fb_return` releases the buffer back to the driver. Works identically on DVP and CSI.
 
 ## Building apps
 
