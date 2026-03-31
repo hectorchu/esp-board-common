@@ -13,10 +13,12 @@
 #define DISPLAY_ST7796      1
 #define DISPLAY_ST7789      2
 #define DISPLAY_AXS15231B   3
+#define DISPLAY_ST7701      4
 
 #define TOUCH_FT6336        1
 #define TOUCH_CST816D       2
 #define TOUCH_AXS15231B     3
+#define TOUCH_GT911         4
 
 #define PMIC_AXP2101        1
 

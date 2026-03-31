@@ -34,6 +34,8 @@
 #include "board_display_st7796.h"
 #elif BOARD_DISPLAY_DRIVER == DISPLAY_ST7789
 #include "board_display_st7789.h"
+#elif BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+#include "board_display_st7701.h"
 #endif
 
 #if BOARD_TOUCH_DRIVER == TOUCH_AXS15231B
@@ -42,6 +44,8 @@
 #include "board_touch_ft6336.h"
 #elif BOARD_TOUCH_DRIVER == TOUCH_CST816D
 #include "board_touch_cst816d.h"
+#elif BOARD_TOUCH_DRIVER == TOUCH_GT911
+#include "board_touch_gt911.h"
 #endif
 
 #if BOARD_HAS_IO_EXPANDER
@@ -237,7 +241,10 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
     lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = io_handle,
         .panel_handle = panel_handle,
-#if BOARD_DISPLAY_QUIRK_RASET_BUG
+#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+        /* MIPI-DSI: full-frame full-refresh mode with DPI panel frame buffers. */
+        .buffer_size = lvgl_hres * lvgl_vres,
+#elif BOARD_DISPLAY_QUIRK_RASET_BUG
         /* RASET boards: full-frame direct_mode with custom flush callback. */
         .buffer_size = lvgl_hres * lvgl_vres,
 #else
@@ -249,7 +256,11 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
         .hres = lvgl_hres,
         .vres = lvgl_vres,
         .color_format = LV_COLOR_FORMAT_RGB565,
-#if BOARD_DISPLAY_QUIRK_RASET_BUG
+#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+        .flags = {
+            .full_refresh = true,
+        },
+#elif BOARD_DISPLAY_QUIRK_RASET_BUG
         .flags = {
             .buff_spiram = true,
             .direct_mode = true,
@@ -278,7 +289,18 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
      * on RASET-bug boards. */
     lvgl_port_lock(0);
 
+#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+    /* MIPI-DSI displays use the dedicated DSI display add function
+     * which registers DPI panel event callbacks internally. */
+    lvgl_port_display_dsi_cfg_t dsi_cfg = {
+        .flags = {
+            .avoid_tearing = true,
+        },
+    };
+    *disp_out = lvgl_port_add_disp_dsi(&disp_cfg, &dsi_cfg);
+#else
     *disp_out = lvgl_port_add_disp(&disp_cfg);
+#endif
 
 #if BOARD_DISPLAY_QUIRK_RASET_BUG
     /* Override flush callback with RASET workaround */
@@ -332,6 +354,8 @@ int board_init(const board_app_config_t *app_cfg,
 #elif BOARD_DISPLAY_DRIVER == DISPLAY_ST7789
     board_display_st7789_init(&io_handle, &panel_handle,
                                BOARD_LCD_H_RES * BOARD_LCD_V_RES * sizeof(lv_color16_t));
+#elif BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+    board_display_st7701_init(&io_handle, &panel_handle);
 #endif
 
     /* Step 4: PMIC (if present — after display is fully initialized) */
@@ -373,6 +397,13 @@ int board_init(const board_app_config_t *app_cfg,
     }
 #elif BOARD_TOUCH_DRIVER == TOUCH_CST816D
     touch_handle = board_touch_cst816d_init(i2c_bus, touch_x_max, touch_y_max);
+#elif BOARD_TOUCH_DRIVER == TOUCH_GT911
+    touch_handle = board_touch_gt911_init(i2c_bus, touch_x_max, touch_y_max);
+    if (landscape) {
+        touch_handle->config.flags.swap_xy = 1;
+        touch_handle->config.flags.mirror_x = 0;
+        touch_handle->config.flags.mirror_y = 1;
+    }
 #endif
 
     /* Step 6: Backlight — init PWM but keep off (duty=0).

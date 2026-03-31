@@ -1,4 +1,5 @@
 #include "board_backlight.h"
+#include "board_config.h"
 #include "driver/ledc.h"
 #include "esp_log.h"
 
@@ -10,6 +11,10 @@ static const char *TAG = "backlight";
 #define BL_LEDC_DUTY_RES    LEDC_TIMER_10_BIT
 #define BL_LEDC_DUTY        (1024)
 #define BL_LEDC_FREQUENCY   (5000)
+
+#ifndef BOARD_BACKLIGHT_INVERTED
+#define BOARD_BACKLIGHT_INVERTED 0
+#endif
 
 static uint8_t g_brightness = 0;
 
@@ -43,6 +48,9 @@ void board_backlight_set(uint8_t brightness)
 
     g_brightness = brightness;
     uint32_t duty = (brightness * (BL_LEDC_DUTY - 1)) / 100;
+#if BOARD_BACKLIGHT_INVERTED
+    duty = (BL_LEDC_DUTY - 1) - duty;
+#endif
 
     ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
     ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));

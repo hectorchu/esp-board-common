@@ -6,9 +6,11 @@ set(SRC_FILES
     "src/board_display_axs15231b.c"
     "src/board_display_st7796.c"
     "src/board_display_st7789.c"
+    "src/board_display_st7701.c"
     "src/board_touch_axs15231b.c"
     "src/board_touch_ft6336.c"
     "src/board_touch_cst816d.c"
+    "src/board_touch_gt911.c"
     "src/board_camera.c"
     "src/board_camera_csi.c"
     "src/board_sdcard.c"
@@ -27,11 +29,17 @@ set(REQUIRED_COMPONENTS
     "espressif__esp_lcd_axs15231b" "espressif__esp_io_expander_tca9554"
     "espressif__esp_lcd_st7796"
     "espressif__esp_lcd_touch_ft5x06" "espressif__esp_lcd_touch_cst816s"
+    "espressif__esp_lcd_touch_gt911"
     "XPowersLib"
     "fatfs" "nvs_flash"
     "espressif__esp_codec_dev"
     "waveshare__pcf85063a" "waveshare__qmi8658"
 )
+
+# MIPI-DSI display (ESP32-P4): ST7701 + LDO regulator
+if(IDF_TARGET STREQUAL "esp32p4")
+    list(APPEND REQUIRED_COMPONENTS "espressif__esp_lcd_st7701")
+endif()
 
 # DVP camera (ESP32-S3 and compatible targets)
 if(NOT IDF_TARGET STREQUAL "esp32p4")
