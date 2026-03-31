@@ -34,7 +34,13 @@ void board_backlight_init(int bl_pin)
     ch_cfg.timer_sel = BL_LEDC_TIMER;
     ch_cfg.intr_type = LEDC_INTR_DISABLE;
     ch_cfg.gpio_num = bl_pin;
+    /* Start with backlight OFF. On inverted boards duty=0 is full brightness,
+     * so we need max duty to keep it dark until the first frame is rendered. */
+#if BOARD_BACKLIGHT_INVERTED
+    ch_cfg.duty = BL_LEDC_DUTY - 1;
+#else
     ch_cfg.duty = 0;
+#endif
     ch_cfg.hpoint = 0;
     ESP_ERROR_CHECK(ledc_channel_config(&ch_cfg));
 }
