@@ -33,7 +33,7 @@
 #define BOARD_MIPI_DSI_PHY_LDO_CHAN         3
 #define BOARD_MIPI_DSI_PHY_LDO_MV           2500
 #define BOARD_MIPI_DPI_CLK_MHZ              30
-#define BOARD_MIPI_DPI_NUM_FBS              2
+#define BOARD_MIPI_DPI_NUM_FBS              3
 /* DPI video timing (from Waveshare BSP) */
 #define BOARD_MIPI_DPI_HBP                  42
 #define BOARD_MIPI_DPI_HSYNC                12

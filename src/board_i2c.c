@@ -6,6 +6,7 @@
 #include "freertos/semphr.h"
 
 static SemaphoreHandle_t i2c_mux;
+static i2c_master_bus_handle_t s_bus_handle;
 
 bool board_i2c_lock(uint32_t timeout_ms)
 {
@@ -34,5 +35,11 @@ i2c_master_bus_handle_t board_i2c_init(int sda_pin, int scl_pin, int port_num)
     ESP_ERROR_CHECK(i2c_new_master_bus(&cfg, &bus_handle));
 
     i2c_mux = xSemaphoreCreateRecursiveMutex();
+    s_bus_handle = bus_handle;
     return bus_handle;
+}
+
+i2c_master_bus_handle_t board_i2c_get_handle(void)
+{
+    return s_bus_handle;
 }

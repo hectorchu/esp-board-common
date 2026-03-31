@@ -11,7 +11,8 @@ Built as an ESP-IDF component. Apps reference it via `EXTRA_COMPONENT_DIRS` and 
 | `waveshare_s3_lcd35b` | ESP32-S3 | AXS15231B 320x480 QSPI | AXS15231B | OV5640 DVP |
 | `waveshare_s3_lcd35` | ESP32-S3 | ST7796 320x480 SPI | FT6336 | OV5640 DVP |
 | `waveshare_s3_lcd2` | ESP32-S3 | ST7789 240x320 SPI | CST816D | -- |
-| `waveshare_p4_lcd35` | ESP32-P4 | ST7796 320x480 SPI | FT6336 | -- |
+| `waveshare_p4_lcd35` | ESP32-P4 | ST7796 320x480 SPI | FT6336 | OV5647 CSI |
+| `waveshare_p4_lcd43` | ESP32-P4 | ST7701 480x800 MIPI-DSI | GT911 | OV5647 CSI |
 
 ## Project structure
 
@@ -22,7 +23,8 @@ esp-board-common/
 │   ├── waveshare_s3_lcd35b/
 │   ├── waveshare_s3_lcd35/
 │   ├── waveshare_s3_lcd2/
-│   └── waveshare_p4_lcd35/
+│   ├── waveshare_p4_lcd35/
+│   └── waveshare_p4_lcd43/
 ├── apps/                   # Standalone demo applications
 │   └── camera_viewfinder/
 ├── CMakeLists.txt          # ESP-IDF component registration

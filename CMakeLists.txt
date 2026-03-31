@@ -46,9 +46,9 @@ if(NOT IDF_TARGET STREQUAL "esp32p4")
     list(APPEND REQUIRED_COMPONENTS "espressif__esp32-camera")
 endif()
 
-# CSI camera (ESP32-P4)
+# CSI camera (ESP32-P4): esp_video V4L2 layer handles CSI + ISP internally
 if(IDF_TARGET STREQUAL "esp32p4")
-    list(APPEND REQUIRED_COMPONENTS "esp_driver_cam" "espressif__esp_cam_sensor")
+    list(APPEND REQUIRED_COMPONENTS "esp_driver_cam" "espressif__esp_cam_sensor" "esp_driver_isp" "esp_video")
 endif()
 
 idf_component_register(

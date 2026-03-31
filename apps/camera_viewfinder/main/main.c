@@ -1,3 +1,12 @@
+/**
+ * Camera viewfinder — live camera feed displayed on the board's LCD.
+ *
+ * Uses the unified board_camera API, which dispatches to DVP or CSI
+ * depending on BOARD_CAMERA_INTERFACE in board_config.h.
+ *
+ * On ESP32-P4 boards, uses the PPA (Pixel Processing Accelerator) hardware
+ * engine for zero-CPU-cost scaling from the sensor resolution to the display.
+ */
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -7,10 +16,14 @@
 #include "board.h"
 #include "board_config.h"
 #include "board_camera.h"
+#include "board_i2c.h"
 #include "board_backlight.h"
-#include "esp_camera.h"
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
+
+#if SOC_PPA_SUPPORTED
+#include "driver/ppa.h"
+#endif
 
 static const char *TAG = "viewfinder";
 
@@ -18,52 +31,108 @@ static const char *TAG = "viewfinder";
 #error "This app requires a board with camera support (BOARD_HAS_CAMERA=1)"
 #endif
 
-/* Select largest square camera frame that fits the display's short axis */
-#if BOARD_LCD_H_RES < BOARD_LCD_V_RES
-#define DISPLAY_MIN_DIM BOARD_LCD_H_RES
-#else
-#define DISPLAY_MIN_DIM BOARD_LCD_V_RES
-#endif
-
-#if DISPLAY_MIN_DIM >= 320
-#define CAM_FRAMESIZE   FRAMESIZE_320X320
-#define CAM_DIM         320
-#elif DISPLAY_MIN_DIM >= 240
-#define CAM_FRAMESIZE   FRAMESIZE_240X240
-#define CAM_DIM         240
-#elif DISPLAY_MIN_DIM >= 128
-#define CAM_FRAMESIZE   FRAMESIZE_128X128
-#define CAM_DIM         128
-#else
-#define CAM_FRAMESIZE   FRAMESIZE_96X96
-#define CAM_DIM         96
-#endif
-
-#define CAM_BPP         2   /* RGB565 */
-#define CAM_FRAME_SIZE  (CAM_DIM * CAM_DIM * CAM_BPP)
+/* Display dimensions for the viewfinder crop */
+#define VIEW_W      BOARD_LCD_H_RES
+#define VIEW_H      BOARD_LCD_V_RES
+#define VIEW_BPP    2   /* RGB565 */
+#define VIEW_SIZE   (VIEW_W * VIEW_H * VIEW_BPP)
 
 /* Persistent camera frame buffer and LVGL image descriptor */
 static uint8_t *cam_buf;
 static lv_image_dsc_t cam_img_dsc;
 
+#if SOC_PPA_SUPPORTED
+static ppa_client_handle_t ppa_srm_handle;
+#endif
+
 static void camera_task(void *param)
 {
     lv_obj_t *img = (lv_obj_t *)param;
 
-    ESP_LOGI(TAG, "Camera task started (%dx%d RGB565)", CAM_DIM, CAM_DIM);
+    ESP_LOGI(TAG, "Camera task started (%dx%d RGB565)", VIEW_W, VIEW_H);
 
     while (1) {
-        camera_fb_t *fb = esp_camera_fb_get();
-        if (!fb) {
+        board_camera_frame_t frame;
+        esp_err_t err = board_camera_fb_get(&frame, 5000);
+        if (err != ESP_OK) {
             ESP_LOGE(TAG, "Frame grab failed");
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
 
-        /* Burst-copy then byte-swap in place (both potentially SIMD-optimized) */
-        memcpy(cam_buf, fb->buf, fb->len);
-        esp_camera_fb_return(fb);
-        lv_draw_sw_rgb565_swap(cam_buf, CAM_DIM * CAM_DIM);
+        uint16_t src_w = frame.width;
+        uint16_t src_h = frame.height;
+
+#if SOC_PPA_SUPPORTED
+        /* Hardware-accelerated scale via PPA SRM engine.
+         * Use uniform scaling to maintain aspect ratio and fill the screen.
+         * Pick the larger scale factor so the image covers the display
+         * completely, then center-crop the input to match exactly. */
+        float sx = (float)VIEW_W / src_w;
+        float sy = (float)VIEW_H / src_h;
+        float scale = (sx > sy) ? sx : sy;  /* fill (not fit) */
+        uint32_t in_w = (uint32_t)(VIEW_W / scale);
+        uint32_t in_h = (uint32_t)(VIEW_H / scale);
+        uint32_t off_x = (src_w - in_w) / 2;
+        uint32_t off_y = (src_h - in_h) / 2;
+
+        ppa_srm_oper_config_t srm_cfg = {
+            .in = {
+                .buffer = frame.buf,
+                .pic_w = src_w,
+                .pic_h = src_h,
+                .block_w = in_w,
+                .block_h = in_h,
+                .block_offset_x = off_x,
+                .block_offset_y = off_y,
+                .srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+            },
+            .out = {
+                .buffer = cam_buf,
+                .buffer_size = VIEW_SIZE,
+                .pic_w = VIEW_W,
+                .pic_h = VIEW_H,
+                .block_offset_x = 0,
+                .block_offset_y = 0,
+                .srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+            },
+            .rotation_angle = PPA_SRM_ROTATION_ANGLE_0,
+            .scale_x = scale,
+            .scale_y = scale,
+            .mirror_x = false,
+            .mirror_y = false,
+            .mode = PPA_TRANS_MODE_BLOCKING,
+        };
+        ppa_do_scale_rotate_mirror(ppa_srm_handle, &srm_cfg);
+#else
+        /* Software fallback: nearest-neighbor downscale or center-copy */
+        uint16_t *src_px = (uint16_t *)frame.buf;
+        uint16_t *dst_px = (uint16_t *)cam_buf;
+
+        if (src_w > VIEW_W || src_h > VIEW_H) {
+            for (int dy = 0; dy < VIEW_H; dy++) {
+                int sy = dy * src_h / VIEW_H;
+                for (int dx = 0; dx < VIEW_W; dx++) {
+                    int sx = dx * src_w / VIEW_W;
+                    dst_px[dy * VIEW_W + dx] = src_px[sy * src_w + sx];
+                }
+            }
+        } else {
+            uint16_t off_x = (VIEW_W - src_w) / 2;
+            uint16_t off_y = (VIEW_H - src_h) / 2;
+            for (int y = 0; y < src_h; y++) {
+                memcpy(&dst_px[(off_y + y) * VIEW_W + off_x],
+                       &src_px[y * src_w],
+                       src_w * VIEW_BPP);
+            }
+        }
+#endif
+        board_camera_fb_return(&frame);
+
+#if BOARD_CAMERA_INTERFACE == CAMERA_DVP
+        /* DVP sensors output big-endian RGB565; swap to little-endian for LVGL */
+        lv_draw_sw_rgb565_swap(cam_buf, VIEW_W * VIEW_H);
+#endif
 
         /* Update LVGL image widget */
         if (lvgl_port_lock(100)) {
@@ -84,31 +153,45 @@ void app_main(void)
     lv_display_t *disp;
     lv_indev_t *touch;
 
-    /* Portrait mode: square camera image centered on panel */
     board_app_config_t app_cfg = { .landscape = false };
     board_init(&app_cfg, &disp, &touch);
 
-    /* Initialize camera with square frame matching display */
-    board_camera_init(BOARD_I2C_PORT, CAM_FRAMESIZE);
-    ESP_LOGI(TAG, "Camera initialized (%dx%d)", CAM_DIM, CAM_DIM);
+    /* Initialize camera — pass desired dimensions as hints */
+    esp_err_t cam_err = board_camera_init(board_i2c_get_handle(), VIEW_W, VIEW_H);
+    if (cam_err != ESP_OK) {
+        ESP_LOGE(TAG, "Camera init failed: %s", esp_err_to_name(cam_err));
+        board_backlight_set(100);
+        board_run();
+        return;
+    }
+    ESP_LOGI(TAG, "Camera initialized (view: %dx%d)", VIEW_W, VIEW_H);
 
-    /* Allocate persistent PSRAM buffer for camera frames */
-    cam_buf = heap_caps_malloc(CAM_FRAME_SIZE, MALLOC_CAP_SPIRAM);
+#if SOC_PPA_SUPPORTED
+    /* Register PPA SRM client for hardware-accelerated frame scaling */
+    ppa_client_config_t ppa_cfg = {
+        .oper_type = PPA_OPERATION_SRM,
+    };
+    ESP_ERROR_CHECK(ppa_register_client(&ppa_cfg, &ppa_srm_handle));
+    ESP_LOGI(TAG, "PPA SRM engine registered for hardware scaling");
+#endif
+
+    /* Allocate persistent PSRAM buffer for display-sized frames (cache-aligned for PPA DMA) */
+    cam_buf = heap_caps_aligned_calloc(128, 1, VIEW_SIZE, MALLOC_CAP_SPIRAM);
     assert(cam_buf != NULL);
 
     /* Initialize static image descriptor */
     memset(&cam_img_dsc, 0, sizeof(cam_img_dsc));
     cam_img_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
-    cam_img_dsc.header.w = CAM_DIM;
-    cam_img_dsc.header.h = CAM_DIM;
-    cam_img_dsc.data_size = CAM_FRAME_SIZE;
+    cam_img_dsc.header.w = VIEW_W;
+    cam_img_dsc.header.h = VIEW_H;
+    cam_img_dsc.data_size = VIEW_SIZE;
     cam_img_dsc.data = cam_buf;
 
-    /* Create LVGL image widget for camera frames */
+    /* Create LVGL image widget filling the screen */
     lv_obj_t *img = NULL;
     if (lvgl_port_lock(0)) {
         img = lv_image_create(lv_screen_active());
-        lv_obj_set_size(img, CAM_DIM, CAM_DIM);
+        lv_obj_set_size(img, VIEW_W, VIEW_H);
         lv_obj_center(img);
         lvgl_port_unlock();
     }
@@ -120,13 +203,12 @@ void app_main(void)
         lvgl_port_unlock();
     }
 
-    /* Turn on backlight after first frame setup */
     board_backlight_set(100);
 
-    /* Start camera capture task on core 0 (LVGL runs on core 1) */
-    xTaskCreatePinnedToCore(camera_task, "camera", 4096, img,
+    /* Start camera capture task (large stack for V4L2 ioctls + ISP on P4) */
+    xTaskCreatePinnedToCore(camera_task, "camera", 16384, img,
                             5, NULL, 0);
 
-    ESP_LOGI(TAG, "Viewfinder running");
+    ESP_LOGI(TAG, "Viewfinder running (%dx%d fullscreen)", VIEW_W, VIEW_H);
     board_run();
 }
