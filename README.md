@@ -82,9 +82,9 @@ void app_main(void)
 
 | Interface | Boards | Driver |
 |-----------|--------|--------|
-| SPI | S3 LCD 3.5, S3 LCD 2 | Standard SPI with DMA partial updates |
+| SPI | S3 LCD 3.5, S3 LCD 2, P4 LCD 3.5 | Standard SPI with DMA partial updates |
 | QSPI | S3 LCD 3.5B | Direct mode with RASET workaround |
-| MIPI-DSI | P4 LCD 3.5, P4 LCD 4.3 | DPI video mode with `lvgl_port_add_disp_dsi()`, triple-buffered |
+| MIPI-DSI | P4 LCD 4.3 | DPI video mode with `lvgl_port_add_disp_dsi()`, triple-buffered |
 
 ## Camera interfaces
 
