@@ -7,6 +7,9 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_touch_ft5x06.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
 
 static const char *TAG = "touch_ft6336";
 
@@ -15,9 +18,53 @@ static const char *TAG = "touch_ft6336";
 #define FT5x06_ID_G_PERIODACTIVE        (0x88)
 #define FT5x06_ID_G_PERIODMONITOR       (0x89)
 
+/* Default RST/INT to GPIO_NUM_NC if board config doesn't define them.
+ * Boards with an IO expander (e.g. S3 3.5") reset the touch controller
+ * externally and don't need these pins. Boards without an IO expander
+ * (e.g. P4 3.5") must define them for the hardware reset below. */
+#ifndef BOARD_PIN_TOUCH_RST
+#define BOARD_PIN_TOUCH_RST  GPIO_NUM_NC
+#endif
+#ifndef BOARD_PIN_TOUCH_INT
+#define BOARD_PIN_TOUCH_INT  GPIO_NUM_NC
+#endif
+
+/**
+ * Hardware reset for boards with a dedicated touch RST GPIO.
+ * Boards with an IO expander skip this (RST pin will be GPIO_NUM_NC).
+ *
+ * Note: uses runtime check, not #if, because GPIO_NUM_* are enum values
+ * that the C preprocessor cannot evaluate.
+ */
+static void ft6336_hw_reset(void)
+{
+    if (BOARD_PIN_TOUCH_RST == GPIO_NUM_NC) return;
+
+    gpio_config_t io_conf = {
+        .pin_bit_mask = 1ULL << BOARD_PIN_TOUCH_RST,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+
+    /* Reset sequence: hold RST low for 10ms, then release */
+    gpio_set_level(BOARD_PIN_TOUCH_RST, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level(BOARD_PIN_TOUCH_RST, 1);
+
+    /* FT6336 needs ~200ms after reset before I2C is ready */
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    ESP_LOGI(TAG, "FT6336 hardware reset complete (RST=GPIO%d)", BOARD_PIN_TOUCH_RST);
+}
+
 esp_lcd_touch_handle_t board_touch_ft6336_init(i2c_master_bus_handle_t bus,
                                                 uint16_t x_max, uint16_t y_max)
 {
+    ft6336_hw_reset();
+
     esp_lcd_panel_io_handle_t touch_io_handle;
     esp_lcd_panel_io_i2c_config_t touch_io_config = ESP_LCD_TOUCH_IO_I2C_FT5x06_CONFIG();
     touch_io_config.scl_speed_hz = 400000;
@@ -26,8 +73,8 @@ esp_lcd_touch_handle_t board_touch_ft6336_init(i2c_master_bus_handle_t bus,
     esp_lcd_touch_config_t tp_cfg = {
         .x_max = x_max,
         .y_max = y_max,
-        .rst_gpio_num = GPIO_NUM_NC,
-        .int_gpio_num = GPIO_NUM_NC,
+        .rst_gpio_num = GPIO_NUM_NC,   /* Already reset above; don't let driver reset again */
+        .int_gpio_num = BOARD_PIN_TOUCH_INT,
         .flags = {
             .swap_xy = 0,
             .mirror_x = 0,

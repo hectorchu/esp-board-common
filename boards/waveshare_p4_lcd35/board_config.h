@@ -33,6 +33,7 @@
 #define BOARD_DISPLAY_QUIRK_RASET_BUG   0
 #define BOARD_DISPLAY_DIRECT_MODE       0
 #define BOARD_DISPLAY_INVERT_COLOR      0
+#define BOARD_DISPLAY_MIRROR_X          1   /* Panel is mirrored horizontally by default */
 
 /* ── IO Expander ── */
 #define BOARD_HAS_IO_EXPANDER   0
