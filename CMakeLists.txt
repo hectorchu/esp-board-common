@@ -13,6 +13,10 @@ set(SRC_FILES
     "src/board_touch_gt911.c"
     "src/board_camera.c"
     "src/board_camera_csi.c"
+    "src/board_pipeline_camera_csi.c"
+    "src/board_pipeline_camera_dvp.c"
+    "src/board_pipeline_display_lvgl.c"
+    "src/board_pipeline.c"
     "src/board_sdcard.c"
     "src/board_audio.c"
 )
@@ -34,6 +38,7 @@ set(REQUIRED_COMPONENTS
     "fatfs" "nvs_flash"
     "espressif__esp_codec_dev"
     "waveshare__pcf85063a" "waveshare__qmi8658"
+    "esp-camera-pipeline"
 )
 
 # MIPI-DSI display (ESP32-P4): ST7701 + LDO regulator
