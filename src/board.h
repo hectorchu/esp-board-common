@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include "esp_lcd_types.h"
 #include "lvgl.h"
 
 /* ── Driver selection enums ── */
@@ -73,6 +74,9 @@ void board_run(void);
  * @param interval_ms  Desired render interval in ms, or 0 to disable.
  */
 void board_set_render_interval_ms(uint32_t interval_ms);
+
+/** Get LCD panel handle (for diagnostic/testing that bypasses LVGL). */
+esp_lcd_panel_handle_t board_get_panel_handle(void);
 
 #ifdef __cplusplus
 }

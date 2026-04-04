@@ -26,7 +26,7 @@
 #define BOARD_PIN_LCD_RST       GPIO_NUM_27
 #define BOARD_PIN_LCD_BL        GPIO_NUM_28
 #define BOARD_SPI_HOST          SPI2_HOST
-#define BOARD_LCD_PIXEL_CLOCK   (40 * 1000 * 1000)
+#define BOARD_LCD_PIXEL_CLOCK   (80 * 1000 * 1000)
 
 /* ── Display quirks ── */
 #define BOARD_DISPLAY_QSPI              0

@@ -108,7 +108,7 @@ static void *csi_init(const void *platform_config)
     csi_driver_ctx_t *ctx = calloc(1, sizeof(csi_driver_ctx_t));
     if (!ctx) return NULL;
     ctx->video_fd = -1;
-    ctx->ae_target = cfg->ae_target ? cfg->ae_target : CSI_AE_TARGET_DEFAULT;
+    ctx->ae_target = cfg->ae_target; /* 0 = use ISP default */
 
     /* Initialize esp_video with CSI config.
      * If an I2C bus handle is provided, reuse it for SCCB.
@@ -234,8 +234,10 @@ static esp_err_t csi_start(void *handle, cam_pipeline_frame_cb_t frame_cb,
         return ESP_FAIL;
     }
 
-    /* Apply initial AE target */
-    csi_set_ae_target(ctx, ctx->ae_target);
+    /* Apply initial AE target if configured (0 = use ISP default) */
+    if (ctx->ae_target > 0) {
+        csi_set_ae_target(ctx, ctx->ae_target);
+    }
 
     ESP_LOGI(TAG, "Streaming started (capture task on core %d)", core_id);
     return ESP_OK;
