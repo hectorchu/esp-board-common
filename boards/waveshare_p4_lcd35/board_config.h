@@ -64,9 +64,9 @@
 #define BOARD_HAS_CAMERA            1
 #endif
 #define BOARD_CAMERA_INTERFACE      CAMERA_CSI
-#define BOARD_PIN_CAM_SCCB_SDA      GPIO_NUM_31
-#define BOARD_PIN_CAM_SCCB_SCL      GPIO_NUM_34
-#define BOARD_CAM_SCCB_I2C_PORT     1   /* Port 0 used by main I2C bus */
+#define BOARD_PIN_CAM_SCCB_SDA      GPIO_NUM_7
+#define BOARD_PIN_CAM_SCCB_SCL      GPIO_NUM_8
+#define BOARD_CAM_SCCB_I2C_PORT     0   /* Shares main I2C bus */
 
 /* ── SD Card (4-bit SDMMC) ── */
 #ifndef BOARD_HAS_SDCARD

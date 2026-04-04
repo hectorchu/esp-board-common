@@ -110,16 +110,25 @@ static void *csi_init(const void *platform_config)
     ctx->video_fd = -1;
     ctx->ae_target = cfg->ae_target ? cfg->ae_target : CSI_AE_TARGET_DEFAULT;
 
-    /* Initialize esp_video with CSI config */
-    esp_video_init_csi_config_t csi_config[] = {{
-        .sccb_config = {
-            .init_sccb = false,
-            .i2c_handle = cfg->i2c_bus,
-            .freq = 400000,
-        },
-        .reset_pin = -1,
-        .pwdn_pin = -1,
-    }};
+    /* Initialize esp_video with CSI config.
+     * If an I2C bus handle is provided, reuse it for SCCB.
+     * Otherwise, let esp_video init its own SCCB bus from pin config. */
+    esp_video_init_csi_config_t csi_config[1];
+    memset(csi_config, 0, sizeof(csi_config));
+    csi_config[0].reset_pin = -1;
+    csi_config[0].pwdn_pin = -1;
+
+    if (cfg->i2c_bus) {
+        csi_config[0].sccb_config.init_sccb = false;
+        csi_config[0].sccb_config.i2c_handle = cfg->i2c_bus;
+        csi_config[0].sccb_config.freq = 400000;
+    } else {
+        csi_config[0].sccb_config.init_sccb = true;
+        csi_config[0].sccb_config.i2c_config.port = cfg->sccb_i2c_port;
+        csi_config[0].sccb_config.i2c_config.sda_pin = cfg->sccb_sda_pin;
+        csi_config[0].sccb_config.i2c_config.scl_pin = cfg->sccb_scl_pin;
+        csi_config[0].sccb_config.freq = 100000;
+    }
     esp_video_init_config_t cam_config = { .csi = csi_config };
 
     esp_err_t err = esp_video_init(&cam_config);
