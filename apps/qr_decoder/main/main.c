@@ -5,6 +5,7 @@
  * Text appears on decode and fades out after 2 seconds. New decodes
  * replace the previous text and reset the timer.
  */
+#include <inttypes.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -180,6 +181,14 @@ void app_main(void)
     cam_pipeline_config_t pipeline_cfg = board_pipeline_default_config(
         screen, board_i2c_get_handle());
 
+    /* Square crop: use shorter display dimension for both axes.
+     * Camera fill+crop produces a square frame — no wasted pixels for
+     * the QR consumer, and the LVGL display driver centers it. */
+    uint32_t square = (pipeline_cfg.display_width < pipeline_cfg.display_height)
+                          ? pipeline_cfg.display_width : pipeline_cfg.display_height;
+    pipeline_cfg.display_width = square;
+    pipeline_cfg.display_height = square;
+
     /* Create the pipeline — starts camera streaming + display */
     cam_pipeline_handle_t pipeline = cam_pipeline_create(&pipeline_cfg);
     if (!pipeline) {
@@ -189,64 +198,23 @@ void app_main(void)
         return;
     }
 
-    /* Semi-transparent overlay bars showing the QR scan region.
-     * The QR consumer crops to a centered square (shorter dimension).
-     * On a portrait display (w < h), bars go top and bottom. */
-    uint32_t crop_size = (BOARD_LCD_H_RES < BOARD_LCD_V_RES)
-                             ? BOARD_LCD_H_RES : BOARD_LCD_V_RES;
-    uint32_t bar_h = (BOARD_LCD_V_RES - crop_size) / 2;
-    uint32_t bar_w = (BOARD_LCD_H_RES - crop_size) / 2;
-
+    /* Black background behind the centered square */
     if (lvgl_port_lock(0)) {
-        /* Top/bottom bars (portrait) or left/right bars (landscape) */
-        if (bar_h > 0) {
-            /* Portrait: crop height, bars on top and bottom */
-            lv_obj_t *bar_top = lv_obj_create(screen);
-            lv_obj_remove_style_all(bar_top);
-            lv_obj_set_size(bar_top, BOARD_LCD_H_RES, bar_h);
-            lv_obj_set_style_bg_color(bar_top, lv_color_hex(0x000000), 0);
-            lv_obj_set_style_bg_opa(bar_top, LV_OPA_50, 0);
-            lv_obj_align(bar_top, LV_ALIGN_TOP_MID, 0, 0);
+        lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
 
-            lv_obj_t *bar_bot = lv_obj_create(screen);
-            lv_obj_remove_style_all(bar_bot);
-            lv_obj_set_size(bar_bot, BOARD_LCD_H_RES, bar_h);
-            lv_obj_set_style_bg_color(bar_bot, lv_color_hex(0x000000), 0);
-            lv_obj_set_style_bg_opa(bar_bot, LV_OPA_50, 0);
-            lv_obj_align(bar_bot, LV_ALIGN_BOTTOM_MID, 0, 0);
-        }
-        if (bar_w > 0) {
-            /* Landscape: crop width, bars on left and right */
-            lv_obj_t *bar_left = lv_obj_create(screen);
-            lv_obj_remove_style_all(bar_left);
-            lv_obj_set_size(bar_left, bar_w, BOARD_LCD_V_RES);
-            lv_obj_set_style_bg_color(bar_left, lv_color_hex(0x000000), 0);
-            lv_obj_set_style_bg_opa(bar_left, LV_OPA_50, 0);
-            lv_obj_align(bar_left, LV_ALIGN_LEFT_MID, 0, 0);
-
-            lv_obj_t *bar_right = lv_obj_create(screen);
-            lv_obj_remove_style_all(bar_right);
-            lv_obj_set_size(bar_right, bar_w, BOARD_LCD_V_RES);
-            lv_obj_set_style_bg_color(bar_right, lv_color_hex(0x000000), 0);
-            lv_obj_set_style_bg_opa(bar_right, LV_OPA_50, 0);
-            lv_obj_align(bar_right, LV_ALIGN_RIGHT_MID, 0, 0);
-        }
-
-        /* QR result label — on top of everything */
+        /* QR result label — in the bottom blank area */
         qr_label = lv_label_create(screen);
         lv_obj_set_width(qr_label, BOARD_LCD_H_RES - 20);
         lv_label_set_long_mode(qr_label, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_color(qr_label, lv_color_hex(0x00FF00), 0);
         lv_obj_set_style_text_font(qr_label, &lv_font_montserrat_24, 0);
-        lv_obj_set_style_bg_color(qr_label, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_bg_opa(qr_label, LV_OPA_70, 0);
         lv_obj_set_style_pad_all(qr_label, 8, 0);
-        lv_obj_align(qr_label, LV_ALIGN_BOTTOM_MID, 0, -20);
+        lv_obj_align(qr_label, LV_ALIGN_BOTTOM_MID, 0, -10);
         lv_label_set_text(qr_label, "");
         lv_obj_add_flag(qr_label, LV_OBJ_FLAG_HIDDEN);
 
 #ifdef CONFIG_CAM_PIPELINE_DEBUG
-        /* FPS stats label — centered in the top overlay bar */
+        /* FPS stats label — in the top blank area */
         fps_label = lv_label_create(screen);
         lv_obj_set_width(fps_label, BOARD_LCD_H_RES);
         lv_obj_set_style_text_color(fps_label, lv_color_hex(0xFFFFFF), 0);
@@ -272,8 +240,8 @@ void app_main(void)
     /* Start QR decode consumer */
     cam_pipeline_qr_config_t qr_cfg = {
         .pipeline     = pipeline,
-        .frame_width  = BOARD_LCD_H_RES,
-        .frame_height = BOARD_LCD_V_RES,
+        .frame_width  = square,
+        .frame_height = square,
         .on_decoded   = on_qr_decoded,
         .user_ctx     = NULL,
     };
@@ -284,6 +252,6 @@ void app_main(void)
 
     board_backlight_set(100);
 
-    ESP_LOGI(TAG, "QR decoder running (%dx%d)", BOARD_LCD_H_RES, BOARD_LCD_V_RES);
+    ESP_LOGI(TAG, "QR decoder running (%"PRIu32"x%"PRIu32" square)", square, square);
     board_run();
 }

@@ -12,6 +12,10 @@
 #include "board_pipeline.h"
 #include "board_pipeline_display_lvgl.h"
 
+#ifndef BOARD_CAMERA_ROTATION
+#define BOARD_CAMERA_ROTATION 0
+#endif
+
 #if BOARD_CAMERA_INTERFACE == CAMERA_DVP
 #include "board_pipeline_camera_dvp.h"
 static board_pipeline_dvp_config_t s_dvp_config;
@@ -26,6 +30,7 @@ cam_pipeline_config_t board_pipeline_default_config(void *display_parent,
     cam_pipeline_config_t config = {
         .display_width  = BOARD_LCD_H_RES,
         .display_height = BOARD_LCD_V_RES,
+        .rotation       = BOARD_CAMERA_ROTATION,
         .display_driver = &board_pipeline_lvgl_display_driver,
         .display_config = NULL,
         .display_parent = display_parent,
