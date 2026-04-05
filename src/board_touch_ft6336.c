@@ -82,8 +82,12 @@ esp_lcd_touch_handle_t board_touch_ft6336_init(i2c_master_bus_handle_t bus,
         },
     };
 
-    esp_lcd_touch_handle_t touch_handle;
-    ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_ft5x06(touch_io_handle, &tp_cfg, &touch_handle));
+    esp_lcd_touch_handle_t touch_handle = NULL;
+    esp_err_t err = esp_lcd_touch_new_i2c_ft5x06(touch_io_handle, &tp_cfg, &touch_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "FT6336 touch init failed (0x%x) — continuing without touch", err);
+        return NULL;
+    }
 
     /* Override Espressif driver defaults for better swipe detection.
      *
