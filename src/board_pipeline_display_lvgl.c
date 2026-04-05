@@ -1,36 +1,141 @@
 /**
- * Camera pipeline display driver — LVGL image widget implementation.
+ * Camera pipeline display driver — LVGL integration.
  *
- * Renders RGB565 camera frames via an lv_image widget and provides
- * an overlay container for app UI on top of the live feed.
+ * Two modes:
  *
- * push_frame() copies into a persistent PSRAM buffer because the pipeline's
- * frame pointer can be recycled by the next camera callback before LVGL
- * finishes rendering.
+ * 1. Image widget (default / MIPI-DSI): Pushes frames via an lv_image widget.
+ *    Supports LVGL overlay widgets on top of the live feed.
+ *    Relies on LVGL rendering cycle — can tear on SPI panels.
+ *
+ * 2. Dummy-draw (SPI panels): Bypasses LVGL rendering entirely.
+ *    Camera frames are byte-swapped and sent to the panel in DMA-friendly
+ *    stripes via esp_lv_adapter_dummy_draw_blit(). Eliminates tearing
+ *    on single-buffered SPI panels (ST7796, ST7789).
+ *    LVGL overlays are NOT rendered while dummy-draw is active.
  */
 #include "board_pipeline_display_lvgl.h"
 
 #include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_lvgl_port.h"
+#include "esp_lv_adapter.h"
 #include "lvgl.h"
 
 static const char *TAG = "pipeline_disp_lvgl";
 
+#define DMA_STRIPE_LINES_DEFAULT  120
+#define DMA_STRIPE_LINES_MIN      10
+#define DMA_BUF_ALIGN             64   /* safe for SPI DMA on all targets */
+
 typedef struct {
+    /* Common */
     lv_obj_t *container;
     lv_obj_t *img_widget;
     lv_image_dsc_t img_dsc;
     uint8_t *cam_buf;
     uint32_t width;
     uint32_t height;
+
+    /* Dummy-draw mode */
+    bool dummy_draw;
+    bool byte_swap;
+    lv_display_t *disp;
+    uint8_t *dma_buf;
+    uint32_t dma_stripe_lines;
+    uint32_t panel_width;
+    uint32_t panel_height;
+    uint32_t y_offset;      /* vertical centering offset on panel */
 } lvgl_display_ctx_t;
+
+/* ── Byte-swap helper (RGB565 endianness for SPI) ── */
+
+static inline void copy_swap_u16(uint16_t *dst, const uint16_t *src, size_t count)
+{
+    while (count--) {
+        uint16_t p = *src++;
+        *dst++ = (uint16_t)((p << 8) | (p >> 8));
+    }
+}
+
+/* ── Dummy-draw push: striped DMA blit bypassing LVGL ── */
+
+static bool push_frame_dummy_draw(lvgl_display_ctx_t *ctx,
+                                  const uint8_t *rgb565_buf,
+                                  uint32_t width, uint32_t height)
+{
+    if (!ctx->byte_swap) {
+        /* MIPI-DSI / parallel panels: blit the pipeline buffer directly.
+         * No byte-swap needed, no intermediate DMA buffer, single call.
+         * For DPI panels, draw_bitmap does a DMA2D copy to the panel's
+         * framebuffer — source can be any PSRAM-aligned buffer. */
+        uint32_t y = ctx->y_offset;
+        esp_err_t ret = esp_lv_adapter_dummy_draw_blit(
+            ctx->disp, 0, y, width, y + height, rgb565_buf, false);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "dummy_draw_blit failed: %s", esp_err_to_name(ret));
+            return false;
+        }
+        return true;
+    }
+
+    /* SPI panels: byte-swap + striped DMA through internal-RAM buffer */
+    const size_t row_bytes = width * 2;
+    const uint8_t *src_fb = rgb565_buf;
+    uint32_t row = 0;
+
+    while (row < height) {
+        uint32_t block = height - row;
+        if (block > ctx->dma_stripe_lines)
+            block = ctx->dma_stripe_lines;
+
+        const uint16_t *src = (const uint16_t *)(src_fb + (size_t)row * row_bytes);
+        copy_swap_u16((uint16_t *)ctx->dma_buf, src, (size_t)width * block);
+
+        /* wait=false for all stripes: the SPI panel IO driver is
+         * semi-synchronous — each draw_bitmap blocks until the previous
+         * transfer completes, then queues the new one. Using wait=true
+         * on the last stripe enters xTaskNotifyWait which can deadlock
+         * when called from the camera streaming task. */
+        uint32_t y = ctx->y_offset + row;
+        esp_err_t ret = esp_lv_adapter_dummy_draw_blit(
+            ctx->disp, 0, y, width, y + block, ctx->dma_buf, false);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "dummy_draw_blit failed: %s", esp_err_to_name(ret));
+            return false;
+        }
+        row += block;
+    }
+    return true;
+}
+
+/* ── Image widget push: standard LVGL rendering ── */
+
+static bool push_frame_image_widget(lvgl_display_ctx_t *ctx,
+                                    const uint8_t *rgb565_buf,
+                                    uint32_t width, uint32_t height)
+{
+    /* Non-blocking try-lock — skip frame if LVGL is busy */
+    if (esp_lv_adapter_lock(0) != ESP_OK) {
+        return false;
+    }
+
+    memcpy(ctx->cam_buf, rgb565_buf, width * height * 2);
+    lv_obj_invalidate(ctx->container);
+
+    esp_lv_adapter_unlock();
+    return true;
+}
+
+/* ── Driver interface ── */
 
 static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
                                const void *driver_config)
 {
-    (void)driver_config;
+    const board_pipeline_lvgl_display_config_t *cfg =
+        (const board_pipeline_lvgl_display_config_t *)driver_config;
+    bool use_dummy_draw = cfg && cfg->use_dummy_draw;
 
     lvgl_display_ctx_t *ctx = calloc(1, sizeof(lvgl_display_ctx_t));
     if (!ctx) {
@@ -40,25 +145,24 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
 
     ctx->width = width;
     ctx->height = height;
+    ctx->dummy_draw = use_dummy_draw;
+    ctx->byte_swap = cfg ? cfg->byte_swap : false;
     size_t buf_size = width * height * 2; /* RGB565 */
 
-    ctx->cam_buf = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!ctx->cam_buf) {
-        ESP_LOGE(TAG, "Failed to allocate %zu byte cam_buf in PSRAM", buf_size);
-        free(ctx);
-        return NULL;
+    /* Allocate PSRAM buffer (image widget mode needs it always;
+     * dummy-draw mode doesn't, but it's cheap insurance for mode switches) */
+    if (!use_dummy_draw) {
+        ctx->cam_buf = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!ctx->cam_buf) {
+            ESP_LOGE(TAG, "Failed to allocate %zu byte cam_buf in PSRAM", buf_size);
+            free(ctx);
+            return NULL;
+        }
+        memset(ctx->cam_buf, 0, buf_size);
     }
-    memset(ctx->cam_buf, 0, buf_size);
-
-    /* Set up LVGL image descriptor pointing to our persistent buffer */
-    ctx->img_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
-    ctx->img_dsc.header.w = width;
-    ctx->img_dsc.header.h = height;
-    ctx->img_dsc.data_size = buf_size;
-    ctx->img_dsc.data = ctx->cam_buf;
 
     /* Create LVGL widgets — must hold LVGL lock */
-    if (!lvgl_port_lock(1000)) {
+    if (esp_lv_adapter_lock(1000) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to acquire LVGL lock for init");
         heap_caps_free(ctx->cam_buf);
         free(ctx);
@@ -67,22 +171,110 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
 
     lv_obj_t *par = parent ? (lv_obj_t *)parent : lv_screen_active();
 
+    /* Get the display handle from the parent widget */
+    ctx->disp = lv_obj_get_display(par);
+
     /* Container fills the parent — overlay widgets are children of this */
     ctx->container = lv_obj_create(par);
     lv_obj_remove_style_all(ctx->container);
     lv_obj_set_size(ctx->container, width, height);
     lv_obj_center(ctx->container);
 
-    /* Image widget fills the container */
-    ctx->img_widget = lv_image_create(ctx->container);
-    lv_obj_set_size(ctx->img_widget, width, height);
-    lv_obj_center(ctx->img_widget);
-    lv_image_set_src(ctx->img_widget, &ctx->img_dsc);
+    if (!use_dummy_draw) {
+        /* Image widget for LVGL rendering path */
+        ctx->img_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+        ctx->img_dsc.header.w = width;
+        ctx->img_dsc.header.h = height;
+        ctx->img_dsc.data_size = buf_size;
+        ctx->img_dsc.data = ctx->cam_buf;
 
-    lvgl_port_unlock();
+        ctx->img_widget = lv_image_create(ctx->container);
+        lv_obj_set_size(ctx->img_widget, width, height);
+        lv_obj_center(ctx->img_widget);
+        lv_image_set_src(ctx->img_widget, &ctx->img_dsc);
+    }
 
-    ESP_LOGI(TAG, "LVGL display driver initialized (%"PRIu32"x%"PRIu32")",
-             width, height);
+    esp_lv_adapter_unlock();
+
+    /* Dummy-draw setup: allocate DMA buffer (SPI only) and enable mode */
+    if (use_dummy_draw) {
+        if (ctx->byte_swap) {
+            /* SPI panels need an internal-RAM DMA buffer for byte-swap + striped blit */
+            ctx->dma_stripe_lines = DMA_STRIPE_LINES_DEFAULT;
+            while (ctx->dma_stripe_lines >= DMA_STRIPE_LINES_MIN) {
+                size_t stripe_size = width * ctx->dma_stripe_lines * 2;
+                ctx->dma_buf = heap_caps_aligned_alloc(
+                    DMA_BUF_ALIGN, stripe_size,
+                    MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+                if (ctx->dma_buf) break;
+                ctx->dma_stripe_lines /= 2;
+            }
+            if (!ctx->dma_buf) {
+                ESP_LOGE(TAG, "Failed to allocate DMA stripe buffer");
+                ctx->dummy_draw = false;
+                ctx->cam_buf = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                if (!ctx->cam_buf) {
+                    ESP_LOGE(TAG, "Fallback cam_buf alloc also failed");
+                    free(ctx);
+                    return NULL;
+                }
+                memset(ctx->cam_buf, 0, buf_size);
+            } else {
+                ESP_LOGI(TAG, "DMA stripe buffer: %"PRIu32" lines (%zu bytes, internal RAM)",
+                         ctx->dma_stripe_lines, (size_t)(width * ctx->dma_stripe_lines * 2));
+            }
+        }
+
+        if (ctx->dummy_draw) {
+
+            /* Calculate centering offset */
+            ctx->panel_width = lv_display_get_horizontal_resolution(ctx->disp);
+            ctx->panel_height = lv_display_get_vertical_resolution(ctx->disp);
+            ctx->y_offset = (ctx->panel_height > height)
+                          ? (ctx->panel_height - height) / 2 : 0;
+
+            /* Enable dummy-draw mode — LVGL rendering stops */
+            esp_err_t ret = esp_lv_adapter_set_dummy_draw(ctx->disp, true);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to enable dummy_draw: %s", esp_err_to_name(ret));
+                ctx->dummy_draw = false;
+            } else {
+                /* Clear entire display to black before camera frames arrive.
+                 * DPI panels have multiple framebuffers (typically 3).  Each
+                 * clear pass writes to one framebuffer; the panel cycles to
+                 * the next on vsync.  Repeat enough times to clear them all. */
+                uint32_t clear_lines = ctx->dma_stripe_lines ? ctx->dma_stripe_lines : 50;
+                size_t clear_buf_size = ctx->panel_width * clear_lines * 2;
+                uint8_t *clear_buf = ctx->dma_buf;
+                bool free_clear_buf = false;
+                if (!clear_buf) {
+                    /* No DMA buffer (MIPI-DSI path) — allocate temporary PSRAM buffer */
+                    clear_buf = heap_caps_calloc(1, clear_buf_size,
+                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                    free_clear_buf = true;
+                } else {
+                    memset(clear_buf, 0, clear_buf_size);
+                }
+                if (clear_buf) {
+                    for (int pass = 0; pass < 3; pass++) {
+                        for (uint32_t row = 0; row < ctx->panel_height; row += clear_lines) {
+                            uint32_t block = ctx->panel_height - row;
+                            if (block > clear_lines) block = clear_lines;
+                            esp_lv_adapter_dummy_draw_blit(ctx->disp, 0, row,
+                                ctx->panel_width, row + block, clear_buf, false);
+                        }
+                        if (pass < 2) vTaskDelay(pdMS_TO_TICKS(20));
+                    }
+                }
+                if (free_clear_buf) heap_caps_free(clear_buf);
+                ESP_LOGI(TAG, "Display cleared to black (y_offset=%"PRIu32")",
+                         ctx->y_offset);
+            }
+        }
+    }
+
+    ESP_LOGI(TAG, "LVGL display driver initialized (%"PRIu32"x%"PRIu32", %s)",
+             width, height, ctx->dummy_draw ? "dummy-draw" : "image-widget");
     return ctx;
 }
 
@@ -92,16 +284,11 @@ static bool lvgl_display_push_frame(void *handle, const uint8_t *rgb565_buf,
     lvgl_display_ctx_t *ctx = (lvgl_display_ctx_t *)handle;
     if (!ctx) return false;
 
-    /* Non-blocking try-lock — skip frame if LVGL is busy */
-    if (!lvgl_port_lock(0)) {
-        return false;
+    if (ctx->dummy_draw) {
+        return push_frame_dummy_draw(ctx, rgb565_buf, width, height);
+    } else {
+        return push_frame_image_widget(ctx, rgb565_buf, width, height);
     }
-
-    memcpy(ctx->cam_buf, rgb565_buf, width * height * 2);
-    lv_obj_invalidate(ctx->container);
-
-    lvgl_port_unlock();
-    return true;
 }
 
 static void lvgl_display_deinit(void *handle)
@@ -109,13 +296,21 @@ static void lvgl_display_deinit(void *handle)
     lvgl_display_ctx_t *ctx = (lvgl_display_ctx_t *)handle;
     if (!ctx) return;
 
-    if (lvgl_port_lock(1000)) {
+    /* Disable dummy-draw before cleanup */
+    if (ctx->dummy_draw && ctx->disp) {
+        esp_lv_adapter_set_dummy_draw(ctx->disp, false);
+    }
+
+    if (esp_lv_adapter_lock(1000) == ESP_OK) {
         if (ctx->container) {
             lv_obj_delete(ctx->container);
         }
-        lvgl_port_unlock();
+        esp_lv_adapter_unlock();
     }
 
+    if (ctx->dma_buf) {
+        heap_caps_free(ctx->dma_buf);
+    }
     if (ctx->cam_buf) {
         heap_caps_free(ctx->cam_buf);
     }

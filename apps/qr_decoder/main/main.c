@@ -17,7 +17,7 @@
 #include "board_pipeline.h"
 #include "board_i2c.h"
 #include "board_backlight.h"
-#include "esp_lvgl_port.h"
+#include "esp_lv_adapter.h"
 #include "lvgl.h"
 
 #include "esp_cam_pipeline.h"
@@ -96,7 +96,7 @@ static lv_timer_t *fade_timer = NULL;
 
 /**
  * LVGL timer callback: hide QR text after timeout.
- * Runs in LVGL task context (lock already held by esp_lvgl_port).
+ * Runs in LVGL task context (lock already held by adapter).
  */
 static void fade_timer_cb(lv_timer_t *timer)
 {
@@ -140,7 +140,7 @@ static void on_qr_decoded(const uint8_t *payload, size_t len,
         ESP_LOGI(TAG, "QR decoded (%zu bytes): %s", len, text);
     }
 
-    if (lvgl_port_lock(50)) {
+    if (esp_lv_adapter_lock(50) == ESP_OK) {
         if (qr_label) {
             lv_label_set_text(qr_label, text);
             lv_obj_clear_flag(qr_label, LV_OBJ_FLAG_HIDDEN);
@@ -154,7 +154,7 @@ static void on_qr_decoded(const uint8_t *payload, size_t len,
                 lv_timer_set_repeat_count(fade_timer, 1);
             }
         }
-        lvgl_port_unlock();
+        esp_lv_adapter_unlock();
     }
 }
 
@@ -172,10 +172,10 @@ void app_main(void)
 
     /* Build pipeline config from board defines */
     lv_obj_t *screen = NULL;
-    if (lvgl_port_lock(0)) {
+    if (esp_lv_adapter_lock(-1) == ESP_OK) {
         screen = lv_screen_active();
         board_set_render_interval_ms(10);
-        lvgl_port_unlock();
+        esp_lv_adapter_unlock();
     }
 
     cam_pipeline_config_t pipeline_cfg = board_pipeline_default_config(
@@ -199,7 +199,7 @@ void app_main(void)
     }
 
     /* Black background behind the centered square */
-    if (lvgl_port_lock(0)) {
+    if (esp_lv_adapter_lock(-1) == ESP_OK) {
         lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
 
         /* QR result label — in the bottom blank area */
@@ -225,15 +225,15 @@ void app_main(void)
         lv_label_set_text(fps_label, "---");
 #endif
 
-        lvgl_port_unlock();
+        esp_lv_adapter_unlock();
     }
 
 #ifdef CONFIG_CAM_PIPELINE_DEBUG
     /* Start FPS stats polling timer */
     s_pipeline = pipeline;
-    if (lvgl_port_lock(0)) {
+    if (esp_lv_adapter_lock(-1) == ESP_OK) {
         lv_timer_create(fps_timer_cb, 1000, NULL);
-        lvgl_port_unlock();
+        esp_lv_adapter_unlock();
     }
 #endif
 

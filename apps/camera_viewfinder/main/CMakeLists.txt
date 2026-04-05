@@ -12,5 +12,5 @@ endif()
 idf_component_register(
     SRCS "main.c"
     INCLUDE_DIRS "."
-    REQUIRES "esp-board-common" "esp_lvgl_port" ${EXTRA_REQS}
+    REQUIRES "esp-board-common" "espressif__esp_lvgl_adapter" ${EXTRA_REQS}
 )

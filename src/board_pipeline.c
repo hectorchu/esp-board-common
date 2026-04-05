@@ -24,15 +24,29 @@ static board_pipeline_dvp_config_t s_dvp_config;
 static board_pipeline_csi_config_t s_csi_config;
 #endif
 
+static board_pipeline_lvgl_display_config_t s_lvgl_display_config;
+
 cam_pipeline_config_t board_pipeline_default_config(void *display_parent,
                                                     void *i2c_bus)
 {
+    /* SPI panels: dummy-draw with byte-swap to fix tearing.
+     * MIPI-DSI (DPI) panels: image widget path for LVGL overlay support
+     * (QR text, FPS stats).  DPI panels don't tear, so dummy-draw isn't
+     * needed, and the image widget path gives proper background rendering. */
+#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+    s_lvgl_display_config.use_dummy_draw = false;
+    s_lvgl_display_config.byte_swap = false;
+#else
+    s_lvgl_display_config.use_dummy_draw = true;
+    s_lvgl_display_config.byte_swap = true;
+#endif
+
     cam_pipeline_config_t config = {
         .display_width  = BOARD_LCD_H_RES,
         .display_height = BOARD_LCD_V_RES,
         .rotation       = BOARD_CAMERA_ROTATION,
         .display_driver = &board_pipeline_lvgl_display_driver,
-        .display_config = NULL,
+        .display_config = &s_lvgl_display_config,
         .display_parent = display_parent,
     };
 

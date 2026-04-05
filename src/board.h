@@ -64,12 +64,12 @@ void board_run(void);
  *
  * Creates an internal LVGL timer that forces lv_timer_handler() to
  * return within the specified interval, overriding the default
- * BOARD_LVGL_MAX_SLEEP_MS without patching esp_lvgl_port.
+ * BOARD_LVGL_MAX_SLEEP_MS.
  *
  * Call with a small value (e.g. 10) for real-time camera/animation,
  * or 0 to revert to the default idle behavior.
  *
- * Must hold the LVGL port lock when calling.
+ * Must hold the LVGL adapter lock when calling.
  *
  * @param interval_ms  Desired render interval in ms, or 0 to disable.
  */

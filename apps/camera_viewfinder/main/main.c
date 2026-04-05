@@ -18,7 +18,7 @@
 #include "board_camera.h"
 #include "board_i2c.h"
 #include "board_backlight.h"
-#include "esp_lvgl_port.h"
+#include "esp_lv_adapter.h"
 #include "lvgl.h"
 
 #if SOC_PPA_SUPPORTED
@@ -135,10 +135,10 @@ static void camera_task(void *param)
 #endif
 
         /* Update LVGL image widget */
-        if (lvgl_port_lock(100)) {
+        if (esp_lv_adapter_lock(100) == ESP_OK) {
             lv_image_set_src(img, &cam_img_dsc);
             lv_obj_invalidate(img);
-            lvgl_port_unlock();
+            esp_lv_adapter_unlock();
         }
 
         /* Minimal yield — camera capture rate is the natural limiter */
@@ -189,18 +189,18 @@ void app_main(void)
 
     /* Create LVGL image widget filling the screen */
     lv_obj_t *img = NULL;
-    if (lvgl_port_lock(0)) {
+    if (esp_lv_adapter_lock(-1) == ESP_OK) {
         img = lv_image_create(lv_screen_active());
         lv_obj_set_size(img, VIEW_W, VIEW_H);
         lv_obj_center(img);
-        lvgl_port_unlock();
+        esp_lv_adapter_unlock();
     }
     assert(img != NULL);
 
     /* Enable fast render interval for real-time viewfinder */
-    if (lvgl_port_lock(0)) {
+    if (esp_lv_adapter_lock(-1) == ESP_OK) {
         board_set_render_interval_ms(10);
-        lvgl_port_unlock();
+        esp_lv_adapter_unlock();
     }
 
     board_backlight_set(100);
