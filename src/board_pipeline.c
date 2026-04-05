@@ -18,6 +18,7 @@
 
 #if BOARD_CAMERA_INTERFACE == CAMERA_DVP
 #include "board_pipeline_camera_dvp.h"
+#include "driver/ledc.h"
 static board_pipeline_dvp_config_t s_dvp_config;
 #elif BOARD_CAMERA_INTERFACE == CAMERA_CSI
 #include "board_pipeline_camera_csi.h"

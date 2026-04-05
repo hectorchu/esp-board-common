@@ -17,3 +17,6 @@ CONFIG_SPI_MASTER_ISR_IN_IRAM=y
 # Disable power management: PM clock gating can scale down APB clock and
 # gate SPI peripheral clocks, causing display transactions to fail.
 CONFIG_PM_ENABLE=n
+
+# Route console to USB-Serial/JTAG (the only USB connection on this board).
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

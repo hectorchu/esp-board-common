@@ -35,10 +35,16 @@
 #define BOARD_DISPLAY_INVERT_COLOR      1   /* ST7796 on this board needs color inversion */
 #define BOARD_DISPLAY_MIRROR_X          1   /* Panel is mirrored horizontally by default */
 
-/* ── IO Expander (for display reset) ── */
+/* ── IO Expander (TCA9554 pin assignments) ──
+ * PIN0 = TP_RST  (touch controller reset)
+ * PIN1 = LCD_RST (display controller reset)
+ * PIN2 = LCD_BL  (backlight — managed separately)
+ * PIN3 = LCD_CS  (display chip select)
+ */
 #define BOARD_HAS_IO_EXPANDER   1
 #define BOARD_IO_EXPANDER_ADDR  ESP_IO_EXPANDER_I2C_TCA9554_ADDRESS_000
-#define BOARD_IO_EXPANDER_RST_PIN  IO_EXPANDER_PIN_NUM_1
+#define BOARD_IO_EXPANDER_RST_PIN        IO_EXPANDER_PIN_NUM_1
+#define BOARD_IO_EXPANDER_TOUCH_RST_PIN  IO_EXPANDER_PIN_NUM_0
 
 /* ── Touch ── */
 #define BOARD_TOUCH_DRIVER      TOUCH_FT6336
