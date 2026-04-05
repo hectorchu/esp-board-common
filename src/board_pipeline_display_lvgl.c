@@ -9,7 +9,7 @@
  *
  * 2. Dummy-draw (SPI panels): Bypasses LVGL rendering entirely.
  *    Camera frames are byte-swapped and sent to the panel in DMA-friendly
- *    stripes via esp_lv_adapter_dummy_draw_blit(). Eliminates tearing
+ *    stripes via esp_lcd_panel_draw_bitmap(). Eliminates tearing
  *    on single-buffered SPI panels (ST7796, ST7789).
  *    LVGL overlays are NOT rendered while dummy-draw is active.
  */
@@ -20,7 +20,9 @@
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_lv_adapter.h"
+#include "esp_lvgl_port.h"
+#include "esp_lcd_panel_ops.h"
+#include "board.h"
 #include "lvgl.h"
 
 static const char *TAG = "pipeline_disp_lvgl";
@@ -65,16 +67,18 @@ static bool push_frame_dummy_draw(lvgl_display_ctx_t *ctx,
                                   const uint8_t *rgb565_buf,
                                   uint32_t width, uint32_t height)
 {
+    esp_lcd_panel_handle_t panel = board_get_panel_handle();
+
     if (!ctx->byte_swap) {
         /* MIPI-DSI / parallel panels: blit the pipeline buffer directly.
          * No byte-swap needed, no intermediate DMA buffer, single call.
          * For DPI panels, draw_bitmap does a DMA2D copy to the panel's
          * framebuffer — source can be any PSRAM-aligned buffer. */
         uint32_t y = ctx->y_offset;
-        esp_err_t ret = esp_lv_adapter_dummy_draw_blit(
-            ctx->disp, 0, y, width, y + height, rgb565_buf, false);
+        esp_err_t ret = esp_lcd_panel_draw_bitmap(
+            panel, 0, y, width, y + height, rgb565_buf);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "dummy_draw_blit failed: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "draw_bitmap failed: %s", esp_err_to_name(ret));
             return false;
         }
         return true;
@@ -93,16 +97,11 @@ static bool push_frame_dummy_draw(lvgl_display_ctx_t *ctx,
         const uint16_t *src = (const uint16_t *)(src_fb + (size_t)row * row_bytes);
         copy_swap_u16((uint16_t *)ctx->dma_buf, src, (size_t)width * block);
 
-        /* wait=false for all stripes: the SPI panel IO driver is
-         * semi-synchronous — each draw_bitmap blocks until the previous
-         * transfer completes, then queues the new one. Using wait=true
-         * on the last stripe enters xTaskNotifyWait which can deadlock
-         * when called from the camera streaming task. */
         uint32_t y = ctx->y_offset + row;
-        esp_err_t ret = esp_lv_adapter_dummy_draw_blit(
-            ctx->disp, 0, y, width, y + block, ctx->dma_buf, false);
+        esp_err_t ret = esp_lcd_panel_draw_bitmap(
+            panel, 0, y, width, y + block, ctx->dma_buf);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "dummy_draw_blit failed: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "draw_bitmap failed: %s", esp_err_to_name(ret));
             return false;
         }
         row += block;
@@ -117,14 +116,14 @@ static bool push_frame_image_widget(lvgl_display_ctx_t *ctx,
                                     uint32_t width, uint32_t height)
 {
     /* Non-blocking try-lock — skip frame if LVGL is busy */
-    if (esp_lv_adapter_lock(0) != ESP_OK) {
+    if (!lvgl_port_lock(1)) {
         return false;
     }
 
     memcpy(ctx->cam_buf, rgb565_buf, width * height * 2);
     lv_obj_invalidate(ctx->container);
 
-    esp_lv_adapter_unlock();
+    lvgl_port_unlock();
     return true;
 }
 
@@ -162,7 +161,7 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
     }
 
     /* Create LVGL widgets — must hold LVGL lock */
-    if (esp_lv_adapter_lock(1000) != ESP_OK) {
+    if (!lvgl_port_lock(1000)) {
         ESP_LOGE(TAG, "Failed to acquire LVGL lock for init");
         heap_caps_free(ctx->cam_buf);
         free(ctx);
@@ -194,7 +193,7 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
         lv_image_set_src(ctx->img_widget, &ctx->img_dsc);
     }
 
-    esp_lv_adapter_unlock();
+    lvgl_port_unlock();
 
     /* Dummy-draw setup: allocate DMA buffer (SPI only) and enable mode */
     if (use_dummy_draw) {
@@ -233,10 +232,11 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
             ctx->y_offset = (ctx->panel_height > height)
                           ? (ctx->panel_height - height) / 2 : 0;
 
-            /* Enable dummy-draw mode — LVGL rendering stops */
-            esp_err_t ret = esp_lv_adapter_set_dummy_draw(ctx->disp, true);
+            /* Enable dummy-draw mode — stop LVGL rendering so camera
+             * frames can be sent directly to the panel. */
+            esp_err_t ret = lvgl_port_stop();
             if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to enable dummy_draw: %s", esp_err_to_name(ret));
+                ESP_LOGE(TAG, "Failed to stop LVGL port: %s", esp_err_to_name(ret));
                 ctx->dummy_draw = false;
             } else {
                 /* Clear entire display to black before camera frames arrive.
@@ -256,12 +256,13 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
                     memset(clear_buf, 0, clear_buf_size);
                 }
                 if (clear_buf) {
+                    esp_lcd_panel_handle_t panel = board_get_panel_handle();
                     for (int pass = 0; pass < 3; pass++) {
                         for (uint32_t row = 0; row < ctx->panel_height; row += clear_lines) {
                             uint32_t block = ctx->panel_height - row;
                             if (block > clear_lines) block = clear_lines;
-                            esp_lv_adapter_dummy_draw_blit(ctx->disp, 0, row,
-                                ctx->panel_width, row + block, clear_buf, false);
+                            esp_lcd_panel_draw_bitmap(panel, 0, row,
+                                ctx->panel_width, row + block, clear_buf);
                         }
                         if (pass < 2) vTaskDelay(pdMS_TO_TICKS(20));
                     }
@@ -296,16 +297,16 @@ static void lvgl_display_deinit(void *handle)
     lvgl_display_ctx_t *ctx = (lvgl_display_ctx_t *)handle;
     if (!ctx) return;
 
-    /* Disable dummy-draw before cleanup */
-    if (ctx->dummy_draw && ctx->disp) {
-        esp_lv_adapter_set_dummy_draw(ctx->disp, false);
+    /* Resume LVGL rendering if dummy-draw was active */
+    if (ctx->dummy_draw) {
+        lvgl_port_resume();
     }
 
-    if (esp_lv_adapter_lock(1000) == ESP_OK) {
+    if (lvgl_port_lock(1000)) {
         if (ctx->container) {
             lv_obj_delete(ctx->container);
         }
-        esp_lv_adapter_unlock();
+        lvgl_port_unlock();
     }
 
     if (ctx->dma_buf) {

@@ -4,7 +4,7 @@
  * Two rendering paths:
  * - Image widget mode (MIPI-DSI): pushes frames via lv_image, supports overlays.
  * - Dummy-draw mode (SPI): bypasses LVGL rendering, writes directly to panel
- *   via esp_lv_adapter_dummy_draw_blit() in DMA-friendly stripes.
+ *   via esp_lcd_panel_draw_bitmap() in DMA-friendly stripes.
  *   Fixes tearing on single-buffered SPI panels (ST7796, etc.).
  */
 #pragma once

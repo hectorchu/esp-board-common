@@ -23,7 +23,7 @@
 #include "board_config.h"
 #include "board_backlight.h"
 #include "esp_lcd_touch.h"
-#include "esp_lv_adapter.h"
+#include "esp_lvgl_port.h"
 #include "lvgl.h"
 #if LV_USE_GESTURE_RECOGNITION
 #include "indev/lv_indev_gesture.h"
@@ -699,9 +699,9 @@ void app_main(void)
     }
 #endif
 
-    if (esp_lv_adapter_lock(-1) == ESP_OK) {
+    if (lvgl_port_lock(0)) {
         create_ui(disp);
-        esp_lv_adapter_unlock();
+        lvgl_port_unlock();
     }
 
     board_backlight_set(100);

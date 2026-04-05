@@ -35,6 +35,23 @@ extern "C" {
 extern const int LCD_H_RES_VAL;
 extern const int LCD_V_RES_VAL;
 
+/* ── Compile-time orientation (from Kconfig CONFIG_BOARD_LANDSCAPE) ── */
+#ifdef CONFIG_BOARD_LANDSCAPE
+#define BOARD_LANDSCAPE  1
+#else
+#define BOARD_LANDSCAPE  0
+#endif
+
+/* Logical display dimensions — what LVGL and application code should use.
+ * In landscape mode these are the physical dimensions swapped. */
+#if BOARD_LANDSCAPE
+#define BOARD_DISP_H_RES  BOARD_LCD_V_RES
+#define BOARD_DISP_V_RES  BOARD_LCD_H_RES
+#else
+#define BOARD_DISP_H_RES  BOARD_LCD_H_RES
+#define BOARD_DISP_V_RES  BOARD_LCD_V_RES
+#endif
+
 /* ── Application-level config (not hardware — passed by the consuming project) ── */
 typedef struct {
     bool landscape;     /* true = 90° CW rotation in flush + touch transform */
@@ -70,7 +87,7 @@ void board_run(void);
  * Call with a small value (e.g. 10) for real-time camera/animation,
  * or 0 to revert to the default idle behavior.
  *
- * Must hold the LVGL adapter lock when calling.
+ * Must hold the LVGL port lock when calling.
  *
  * @param interval_ms  Desired render interval in ms, or 0 to disable.
  */

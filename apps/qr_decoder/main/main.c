@@ -17,7 +17,7 @@
 #include "board_pipeline.h"
 #include "board_i2c.h"
 #include "board_backlight.h"
-#include "esp_lv_adapter.h"
+#include "esp_lvgl_port.h"
 #include "lvgl.h"
 
 #include "esp_cam_pipeline.h"
@@ -140,7 +140,7 @@ static void on_qr_decoded(const uint8_t *payload, size_t len,
         ESP_LOGI(TAG, "QR decoded (%zu bytes): %s", len, text);
     }
 
-    if (esp_lv_adapter_lock(50) == ESP_OK) {
+    if (lvgl_port_lock(50)) {
         if (qr_label) {
             lv_label_set_text(qr_label, text);
             lv_obj_clear_flag(qr_label, LV_OBJ_FLAG_HIDDEN);
@@ -154,7 +154,7 @@ static void on_qr_decoded(const uint8_t *payload, size_t len,
                 lv_timer_set_repeat_count(fade_timer, 1);
             }
         }
-        esp_lv_adapter_unlock();
+        lvgl_port_unlock();
     }
 }
 
@@ -167,25 +167,25 @@ void app_main(void)
     /* Initialize board hardware */
     lv_display_t *disp;
     lv_indev_t *touch;
-    board_app_config_t app_cfg = { .landscape = false };
+    board_app_config_t app_cfg = { .landscape = BOARD_LANDSCAPE };
     board_init(&app_cfg, &disp, &touch);
 
     /* Build pipeline config from board defines */
     lv_obj_t *screen = NULL;
-    if (esp_lv_adapter_lock(-1) == ESP_OK) {
+    if (lvgl_port_lock(0)) {
         screen = lv_screen_active();
         board_set_render_interval_ms(10);
-        esp_lv_adapter_unlock();
+        lvgl_port_unlock();
     }
 
     cam_pipeline_config_t pipeline_cfg = board_pipeline_default_config(
         screen, board_i2c_get_handle());
 
-    /* Square crop: use shorter display dimension for both axes.
+    /* Square crop: use shorter logical dimension for both axes.
      * Camera fill+crop produces a square frame — no wasted pixels for
      * the QR consumer, and the LVGL display driver centers it. */
-    uint32_t square = (pipeline_cfg.display_width < pipeline_cfg.display_height)
-                          ? pipeline_cfg.display_width : pipeline_cfg.display_height;
+    uint32_t square = (BOARD_DISP_H_RES < BOARD_DISP_V_RES)
+                          ? BOARD_DISP_H_RES : BOARD_DISP_V_RES;
     pipeline_cfg.display_width = square;
     pipeline_cfg.display_height = square;
 
@@ -199,12 +199,12 @@ void app_main(void)
     }
 
     /* Black background behind the centered square */
-    if (esp_lv_adapter_lock(-1) == ESP_OK) {
+    if (lvgl_port_lock(0)) {
         lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
 
-        /* QR result label — in the bottom blank area */
+        /* QR result label — below the camera square */
         qr_label = lv_label_create(screen);
-        lv_obj_set_width(qr_label, BOARD_LCD_H_RES - 20);
+        lv_obj_set_width(qr_label, BOARD_DISP_H_RES - 20);
         lv_label_set_long_mode(qr_label, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_color(qr_label, lv_color_hex(0x00FF00), 0);
         lv_obj_set_style_text_font(qr_label, &lv_font_montserrat_24, 0);
@@ -214,9 +214,9 @@ void app_main(void)
         lv_obj_add_flag(qr_label, LV_OBJ_FLAG_HIDDEN);
 
 #ifdef CONFIG_CAM_PIPELINE_DEBUG
-        /* FPS stats label — in the top blank area */
+        /* FPS stats label — above the camera square */
         fps_label = lv_label_create(screen);
-        lv_obj_set_width(fps_label, BOARD_LCD_H_RES);
+        lv_obj_set_width(fps_label, BOARD_DISP_H_RES);
         lv_obj_set_style_text_color(fps_label, lv_color_hex(0xFFFFFF), 0);
         lv_obj_set_style_text_font(fps_label, &lv_font_montserrat_24, 0);
         lv_obj_set_style_text_align(fps_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -225,15 +225,15 @@ void app_main(void)
         lv_label_set_text(fps_label, "---");
 #endif
 
-        esp_lv_adapter_unlock();
+        lvgl_port_unlock();
     }
 
 #ifdef CONFIG_CAM_PIPELINE_DEBUG
     /* Start FPS stats polling timer */
     s_pipeline = pipeline;
-    if (esp_lv_adapter_lock(-1) == ESP_OK) {
+    if (lvgl_port_lock(0)) {
         lv_timer_create(fps_timer_cb, 1000, NULL);
-        esp_lv_adapter_unlock();
+        lvgl_port_unlock();
     }
 #endif
 

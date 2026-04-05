@@ -22,3 +22,6 @@ CONFIG_IDF_EXPERIMENTAL_FEATURES=y
 
 # Disable power management (avoids clock gating issues with display)
 CONFIG_PM_ENABLE=n
+
+# Console output via USB-JTAG (visible on /dev/ttyACM0)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
