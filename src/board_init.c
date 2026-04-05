@@ -72,6 +72,7 @@ static esp_lcd_touch_handle_t touch_handle = NULL;
 
 /* Accessor for diagnostic/testing (bypasses LVGL) */
 esp_lcd_panel_handle_t board_get_panel_handle(void) { return panel_handle; }
+esp_lcd_touch_handle_t board_get_touch_handle(void) { return touch_handle; }
 
 #if BOARD_HAS_IO_EXPANDER
 static esp_io_expander_handle_t expander_handle = NULL;
@@ -256,6 +257,7 @@ static void st7701_landscape_flush_cb(lv_display_t *disp,
 static void io_expander_init(i2c_master_bus_handle_t bus)
 {
     ESP_ERROR_CHECK(esp_io_expander_new_i2c_tca9554(bus, BOARD_IO_EXPANDER_ADDR, &expander_handle));
+
     ESP_ERROR_CHECK(esp_io_expander_set_dir(expander_handle, BOARD_IO_EXPANDER_RST_PIN, IO_EXPANDER_OUTPUT));
     ESP_ERROR_CHECK(esp_io_expander_set_level(expander_handle, BOARD_IO_EXPANDER_RST_PIN, 0));
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -425,9 +427,14 @@ static void lvgl_adapter_setup(const board_app_config_t *app_cfg,
     esp_lcd_panel_io_register_event_callbacks(io_handle, &io_cbs, *disp_out);
 #endif
 
-    /* Touch input */
-    const esp_lv_adapter_touch_config_t touch_cfg = ESP_LV_ADAPTER_TOUCH_DEFAULT_CONFIG(*disp_out, touch_handle);
-    *touch_out = esp_lv_adapter_register_touch(&touch_cfg);
+    /* Touch input (skip if touch init failed) */
+    if (touch_handle) {
+        const esp_lv_adapter_touch_config_t touch_cfg = ESP_LV_ADAPTER_TOUCH_DEFAULT_CONFIG(*disp_out, touch_handle);
+        *touch_out = esp_lv_adapter_register_touch(&touch_cfg);
+    } else {
+        ESP_LOGW(TAG, "No touch controller — skipping LVGL touch registration");
+        if (touch_out) *touch_out = NULL;
+    }
 
     /* Start the LVGL handler task — all registration must be done first */
     ESP_ERROR_CHECK(esp_lv_adapter_start());

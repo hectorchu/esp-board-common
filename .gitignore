@@ -7,3 +7,6 @@ sdkconfig.old
 
 # Dist output (flashable binaries)
 dist/
+
+# Disposable diagnostic files (webcam photos, etc.)
+.tmp/

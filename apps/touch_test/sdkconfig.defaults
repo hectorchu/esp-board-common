@@ -1,0 +1,16 @@
+# Touch test — minimal settings, no camera
+
+# Partition table
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# Task watchdog — generous timeout for debugging
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+
+# LVGL fonts
+CONFIG_LV_FONT_MONTSERRAT_24=y
+
+# Multi-touch gesture recognition (pinch-to-zoom, two-finger rotation)
+CONFIG_LV_USE_GESTURE_RECOGNITION=y
+CONFIG_LV_USE_FLOAT=y

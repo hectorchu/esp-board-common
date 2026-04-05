@@ -8,6 +8,7 @@
 #pragma once
 
 #include "esp_lcd_types.h"
+#include "esp_lcd_touch.h"
 #include "lvgl.h"
 
 /* ── Driver selection enums ── */
@@ -77,6 +78,10 @@ void board_set_render_interval_ms(uint32_t interval_ms);
 
 /** Get LCD panel handle (for diagnostic/testing that bypasses LVGL). */
 esp_lcd_panel_handle_t board_get_panel_handle(void);
+
+/** Get touch handle (for direct driver access — e.g. reading strength data
+ *  that LVGL discards). Returns NULL if touch init failed. */
+esp_lcd_touch_handle_t board_get_touch_handle(void);
 
 #ifdef __cplusplus
 }
