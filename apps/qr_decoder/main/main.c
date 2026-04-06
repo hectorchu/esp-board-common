@@ -24,6 +24,14 @@
 #include "cam_pipeline_qr.h"
 #include "board_log_flash.h"
 
+/* SPI dummy-draw: direct text overlay (LVGL is stopped) */
+#if BOARD_DISPLAY_DRIVER != DISPLAY_ST7701
+#include "overlay_text.h"
+#include "board_pipeline_display_lvgl.h"
+#include "freertos/timers.h"
+static overlay_text_t *s_overlay = NULL;
+#endif
+
 static const char *TAG = "qr_decoder";
 
 #if !BOARD_HAS_CAMERA
@@ -33,7 +41,7 @@ static const char *TAG = "qr_decoder";
 /* ── FPS stats display ── */
 
 #ifdef CONFIG_CAM_PIPELINE_DEBUG
-#if !(BOARD_LANDSCAPE && BOARD_DISPLAY_DRIVER == DISPLAY_ST7701)
+#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701 && !BOARD_LANDSCAPE
 static lv_obj_t *fps_label = NULL;
 #endif
 static cam_pipeline_handle_t s_pipeline = NULL;
@@ -274,9 +282,10 @@ static rotated_overlay_t qr_overlay;
 #endif /* BOARD_LANDSCAPE && DISPLAY_ST7701 */
 
 #ifdef CONFIG_CAM_PIPELINE_DEBUG
-static void fps_timer_cb(lv_timer_t *timer)
+
+/* Shared FPS stats update — called from platform-specific timer callback */
+static void update_fps_stats(void)
 {
-    (void)timer;
     if (!s_pipeline) return;
 
     cam_pipeline_debug_stats_t stats;
@@ -316,6 +325,10 @@ static void fps_timer_cb(lv_timer_t *timer)
     if (fps_overlay.img_rotated) {
         rotated_overlay_update(&fps_overlay, buf, lv_color_white());
     }
+#elif BOARD_DISPLAY_DRIVER != DISPLAY_ST7701
+    snprintf(buf, sizeof(buf), "cam: %.0f  disp: %.0f\nscan: %.0f  det: %.0f",
+             ema_cam, ema_disp, ema_scan, ema_det);
+    overlay_text_set_fps(s_overlay, buf);
 #else
     snprintf(buf, sizeof(buf), "cam: %.0f  disp: %.0f\nscan: %.0f  det: %.0f",
              ema_cam, ema_disp, ema_scan, ema_det);
@@ -324,16 +337,36 @@ static void fps_timer_cb(lv_timer_t *timer)
     }
 #endif
 }
+
+#if BOARD_DISPLAY_DRIVER != DISPLAY_ST7701
+/* SPI dummy-draw: LVGL is stopped, use FreeRTOS software timer */
+static void fps_freertos_timer_cb(TimerHandle_t timer)
+{
+    (void)timer;
+    update_fps_stats();
+}
+#else
+/* DSI: LVGL is running, use LVGL timer */
+static void fps_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    update_fps_stats();
+}
 #endif
+
+#endif /* CONFIG_CAM_PIPELINE_DEBUG */
 
 /* ── QR result display ── */
 
-#if !(BOARD_LANDSCAPE && BOARD_DISPLAY_DRIVER == DISPLAY_ST7701)
+#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701 && !BOARD_LANDSCAPE
 static lv_obj_t *qr_label = NULL;
 #endif
-static lv_timer_t *fade_timer = NULL;
 
 #define QR_DISPLAY_TIMEOUT_MS  2000
+
+/* Auto-hide timer + callback only for DSI paths (SPI overlay handles internally) */
+#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+static lv_timer_t *fade_timer = NULL;
 
 /**
  * LVGL timer callback: hide QR text after timeout.
@@ -342,7 +375,7 @@ static lv_timer_t *fade_timer = NULL;
 static void fade_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
-#if BOARD_LANDSCAPE && BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+#if BOARD_LANDSCAPE
     rotated_overlay_show(&qr_overlay, false);
 #else
     if (qr_label) {
@@ -352,6 +385,7 @@ static void fade_timer_cb(lv_timer_t *timer)
     lv_timer_delete(fade_timer);
     fade_timer = NULL;
 }
+#endif /* DISPLAY_ST7701 */
 
 /**
  * QR decode callback — called from QR decode task (Core 1).
@@ -385,8 +419,12 @@ static void on_qr_decoded(const uint8_t *payload, size_t len,
         ESP_LOGI(TAG, "QR decoded (%zu bytes): %s", len, text);
     }
 
+#if BOARD_DISPLAY_DRIVER != DISPLAY_ST7701
+    /* SPI dummy-draw: direct overlay (no LVGL lock needed) */
+    overlay_text_set_qr(s_overlay, text, QR_DISPLAY_TIMEOUT_MS);
+#else
     if (lvgl_port_lock(50)) {
-#if BOARD_LANDSCAPE && BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+#if BOARD_LANDSCAPE
         if (qr_overlay.img_rotated) {
             rotated_overlay_update(&qr_overlay, text, lv_color_hex(0x00FF00));
             rotated_overlay_show(&qr_overlay, true);
@@ -408,6 +446,7 @@ static void on_qr_decoded(const uint8_t *payload, size_t len,
         }
         lvgl_port_unlock();
     }
+#endif /* DISPLAY_ST7701 */
 }
 
 /* ── Delayed log dump task ── */
@@ -461,6 +500,29 @@ void app_main(void)
     pipeline_cfg.display_width = square;
     pipeline_cfg.display_height = square;
 
+#if BOARD_DISPLAY_DRIVER != DISPLAY_ST7701
+    /* SPI dummy-draw: create direct text overlay in panel gap areas */
+    {
+        overlay_text_config_t ov_cfg = {
+            .panel_width    = BOARD_LCD_H_RES,
+            .panel_height   = BOARD_LCD_V_RES,
+            .camera_height  = square,
+            .byte_swap      = true,   /* SPI panels need byte-swap */
+            .panel_handle   = board_get_panel_handle(),
+            .font           = &lv_font_montserrat_24,
+        };
+        s_overlay = overlay_text_create(&ov_cfg);
+        if (s_overlay) {
+            /* Register callback for QR auto-hide timing (does not modify frame) */
+            board_pipeline_lvgl_display_config_t *disp_cfg =
+                (board_pipeline_lvgl_display_config_t *)pipeline_cfg.display_config;
+            disp_cfg->overlay_cb = overlay_text_cb;
+            disp_cfg->overlay_cb_ctx = s_overlay;
+            ESP_LOGI(TAG, "Gap-area text overlay enabled for SPI dummy-draw");
+        }
+    }
+#endif
+
     /* Create the pipeline — starts camera streaming + display */
     cam_pipeline_handle_t pipeline = cam_pipeline_create(&pipeline_cfg);
     if (!pipeline) {
@@ -511,8 +573,14 @@ void app_main(void)
         }
 #endif
 
+#elif BOARD_DISPLAY_DRIVER != DISPLAY_ST7701
+        /* ── SPI portrait dummy-draw: text in panel gap areas via overlay_text ──
+         * LVGL is stopped (dummy-draw mode) so no widgets or timers work.
+         * See docs/knowledge/text-overlay-architecture.md for why each path
+         * uses a different approach. */
+
 #else
-        /* ── Standard portrait overlay ── */
+        /* ── DSI portrait: standard LVGL label widgets ── */
 
         qr_label = lv_label_create(screen);
         lv_obj_set_width(qr_label, BOARD_DISP_H_RES - 20);
@@ -535,7 +603,7 @@ void app_main(void)
         lv_label_set_text(fps_label, "---");
 #endif
 
-#endif /* BOARD_LANDSCAPE && DISPLAY_ST7701 */
+#endif /* overlay path selection */
 
         lvgl_port_unlock();
     }
@@ -543,10 +611,20 @@ void app_main(void)
 #ifdef CONFIG_CAM_PIPELINE_DEBUG
     /* Start FPS stats polling timer */
     s_pipeline = pipeline;
+#if BOARD_DISPLAY_DRIVER != DISPLAY_ST7701
+    /* SPI: LVGL is stopped — use FreeRTOS software timer */
+    {
+        TimerHandle_t fps_tmr = xTimerCreate("fps", pdMS_TO_TICKS(1000),
+                                              pdTRUE, NULL, fps_freertos_timer_cb);
+        if (fps_tmr) xTimerStart(fps_tmr, 0);
+    }
+#else
+    /* DSI: LVGL is running — use LVGL timer */
     if (lvgl_port_lock(0)) {
         lv_timer_create(fps_timer_cb, 1000, NULL);
         lvgl_port_unlock();
     }
+#endif
 #endif
 
     /* Start QR decode consumer */

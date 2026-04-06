@@ -13,12 +13,22 @@
 #include "cam_pipeline_display_driver.h"
 
 /**
+ * Overlay callback — called per frame before panel push.
+ * May modify the frame buffer in place to composite text, icons, etc.
+ * Runs in the pipeline's camera task context — keep it fast.
+ */
+typedef void (*pipeline_overlay_cb_t)(uint8_t *frame_buf, uint32_t width,
+                                      uint32_t height, void *user_ctx);
+
+/**
  * Optional config passed as display_config in cam_pipeline_config_t.
  * If NULL, defaults to image widget mode (no dummy draw).
  */
 typedef struct {
     bool use_dummy_draw;    /**< true = bypass LVGL, direct stripe blit to panel */
     bool byte_swap;         /**< true = swap RGB565 bytes (SPI panels only) */
+    pipeline_overlay_cb_t overlay_cb;   /**< per-frame overlay compositing callback */
+    void *overlay_cb_ctx;               /**< user context passed to overlay_cb */
 } board_pipeline_lvgl_display_config_t;
 
 extern const cam_pipeline_display_driver_t board_pipeline_lvgl_display_driver;

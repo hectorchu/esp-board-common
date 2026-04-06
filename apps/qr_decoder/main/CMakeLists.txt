@@ -5,7 +5,7 @@ if(NOT IDF_TARGET STREQUAL "esp32p4")
 endif()
 
 idf_component_register(
-    SRCS "main.c"
+    SRCS "main.c" "overlay_text.c"
     INCLUDE_DIRS "."
-    REQUIRES "esp-board-common" "espressif__esp_lvgl_port" "esp-camera-pipeline" "cam_pipeline_qr" ${EXTRA_REQS}
+    REQUIRES "esp-board-common" "espressif__esp_lvgl_port" "esp-camera-pipeline" "cam_pipeline_qr" "esp_lcd" ${EXTRA_REQS}
 )

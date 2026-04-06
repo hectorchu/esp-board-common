@@ -49,6 +49,10 @@ typedef struct {
     uint32_t panel_width;
     uint32_t panel_height;
     uint32_t y_offset;      /* vertical centering offset on panel */
+
+    /* Per-frame overlay compositing */
+    pipeline_overlay_cb_t overlay_cb;
+    void *overlay_cb_ctx;
 } lvgl_display_ctx_t;
 
 /* ── Byte-swap helper (RGB565 endianness for SPI) ── */
@@ -146,6 +150,8 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
     ctx->height = height;
     ctx->dummy_draw = use_dummy_draw;
     ctx->byte_swap = cfg ? cfg->byte_swap : false;
+    ctx->overlay_cb = cfg ? cfg->overlay_cb : NULL;
+    ctx->overlay_cb_ctx = cfg ? cfg->overlay_cb_ctx : NULL;
     size_t buf_size = width * height * 2; /* RGB565 */
 
     /* Allocate PSRAM buffer (image widget mode needs it always;
@@ -284,6 +290,12 @@ static bool lvgl_display_push_frame(void *handle, const uint8_t *rgb565_buf,
 {
     lvgl_display_ctx_t *ctx = (lvgl_display_ctx_t *)handle;
     if (!ctx) return false;
+
+    /* Overlay compositing — modifies frame buffer in place before display.
+     * Cast away const: the pipeline buffer is writable, const is advisory. */
+    if (ctx->overlay_cb) {
+        ctx->overlay_cb((uint8_t *)rgb565_buf, width, height, ctx->overlay_cb_ctx);
+    }
 
     if (ctx->dummy_draw) {
         return push_frame_dummy_draw(ctx, rgb565_buf, width, height);
