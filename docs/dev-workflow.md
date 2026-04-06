@@ -10,7 +10,7 @@ Build, flash, monitor, and capture screenshots for ESP-IDF apps via Docker.
 
 ## Build
 
-Apps are in `apps/` (e.g., `qr_decoder`, `camera_viewfinder`). Each has a Makefile.
+Apps are in `apps/` (e.g., `qr_decoder`). Each has a Makefile.
 
 ```bash
 cd apps/qr_decoder
