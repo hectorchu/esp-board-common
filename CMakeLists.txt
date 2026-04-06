@@ -19,6 +19,7 @@ set(SRC_FILES
     "src/board_pipeline.c"
     "src/board_sdcard.c"
     "src/board_audio.c"
+    "src/board_log_flash.c"
 )
 
 # All dependencies listed unconditionally where possible. The #if BOARD_HAS_*

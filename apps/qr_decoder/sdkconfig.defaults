@@ -31,3 +31,12 @@ CONFIG_CAM_PIPELINE_QR_DEBUG=y
 
 # LVGL fonts
 CONFIG_LV_FONT_MONTSERRAT_24=y
+
+# Core dump to flash — captures crash backtraces for post-mortem analysis
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
+CONFIG_ESP_COREDUMP_CAPTURE_DRAM=y
+
+# Boot log to flash — captures complete boot log, survives reboot
+CONFIG_BOARD_LOG_TO_FLASH=y

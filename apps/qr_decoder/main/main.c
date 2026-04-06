@@ -22,6 +22,7 @@
 
 #include "esp_cam_pipeline.h"
 #include "cam_pipeline_qr.h"
+#include "board_log_flash.h"
 
 static const char *TAG = "qr_decoder";
 
@@ -409,10 +410,23 @@ static void on_qr_decoded(const uint8_t *payload, size_t len,
     }
 }
 
+/* ── Delayed log dump task ── */
+
+void log_dump_task(void *param)
+{
+    (void)param;
+    vTaskDelay(pdMS_TO_TICKS(8000));
+    board_log_flash_dump();
+    vTaskDelete(NULL);
+}
+
 /* ── Main ── */
 
 void app_main(void)
 {
+    /* Flash log — must be first so it captures all subsequent output */
+    board_log_flash_init();
+
     ESP_LOGI(TAG, "QR decoder starting");
 
     /* Initialize board hardware.
@@ -551,5 +565,20 @@ void app_main(void)
     board_backlight_set(100);
 
     ESP_LOGI(TAG, "QR decoder running (%"PRIu32"x%"PRIu32" square)", square, square);
+
+    /* Delayed log dump — waits for USB serial to reconnect, then dumps
+     * the complete boot log from flash so nothing is missed.
+     * Must use internal-RAM stack since board_log_flash_dump reads flash. */
+    {
+        StaticTask_t *dump_tcb = heap_caps_malloc(sizeof(StaticTask_t),
+            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        StackType_t *dump_stack = heap_caps_malloc(4096 * sizeof(StackType_t),
+            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (dump_tcb && dump_stack) {
+            xTaskCreateStatic(log_dump_task, "log_dump", 4096, NULL, 1,
+                              dump_stack, dump_tcb);
+        }
+    }
+
     board_run();
 }
