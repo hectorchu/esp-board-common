@@ -15,6 +15,10 @@ set(EXTRA_COMPONENT_DIRS
 
 set(BOARD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../boards/${BOARD}")
 set(SDKCONFIG_DEFAULTS "sdkconfig.defaults;${BOARD_DIR}/sdkconfig.defaults")
+if(LANDSCAPE)
+    set(SDKCONFIG_DEFAULTS "${SDKCONFIG_DEFAULTS};sdkconfig.landscape")
+    message(STATUS "Landscape orientation enabled")
+endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(qr_decoder)

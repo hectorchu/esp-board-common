@@ -72,6 +72,7 @@ static esp_lcd_touch_handle_t touch_handle = NULL;
 
 /* Accessor for diagnostic/testing (bypasses LVGL) */
 esp_lcd_panel_handle_t board_get_panel_handle(void) { return panel_handle; }
+esp_lcd_touch_handle_t board_get_touch_handle(void) { return touch_handle; }
 
 #if BOARD_HAS_IO_EXPANDER
 static esp_io_expander_handle_t expander_handle = NULL;
@@ -182,80 +183,16 @@ static void landscape_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_
 
 #endif /* BOARD_DISPLAY_QUIRK_RASET_BUG */
 
-/* ── ST7701 MIPI-DSI landscape flush ── */
-#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
-
-static uint16_t *st7701_rot_buf[2] = {NULL, NULL};
-static int st7701_rot_idx = 0;
-static SemaphoreHandle_t dpi_flush_sem = NULL;
-
-static bool dpi_vsync_ready_cb(esp_lcd_panel_handle_t panel,
-                               esp_lcd_dpi_panel_event_data_t *edata,
-                               void *user_ctx)
-{
-    BaseType_t woken = pdFALSE;
-    xSemaphoreGiveFromISR(dpi_flush_sem, &woken);
-    return (woken == pdTRUE);
-}
-
-/**
- * Landscape flush callback for MIPI-DSI (ST7701) displays.
- *
- * LVGL renders in landscape (V_RES x H_RES) with full_refresh.
- * This callback rotates pixels 90° CCW into a separate PSRAM buffer,
- * then calls draw_bitmap with physical portrait dimensions.
- *
- * DPI panels don't support partial updates or hardware rotation (MADCTL).
- * esp_lvgl_port's full_refresh path uses LVGL's logical dimensions for
- * draw_bitmap, which breaks when rotation is applied to a panel that can't
- * actually rotate.  This custom callback bypasses that path entirely.
- *
- * Tearing prevention: draw_bitmap triggers a DMA2D copy to the panel's
- * internal frame buffer.  We wait for the on_refresh_done (vsync) callback
- * to confirm the new frame is being displayed before signaling flush_ready.
- * The drain take(0) discards any stale vsync that fired during rotation.
- */
-static void st7701_landscape_flush_cb(lv_display_t *disp,
-                                      const lv_area_t *area, uint8_t *px_map)
-{
-    if (!lv_display_flush_is_last(disp)) {
-        lv_display_flush_ready(disp);
-        return;
-    }
-
-    /* Landscape framebuffer: V_RES wide, H_RES tall */
-    const int DISP_W = BOARD_LCD_V_RES;  /* e.g. 800 */
-
-    uint16_t *fb = (uint16_t *)px_map;
-    uint16_t *out = st7701_rot_buf[st7701_rot_idx];
-
-    /* 90° CCW rotation: portrait(px, py) = landscape(DISP_W-1-py, px)
-     * No byte swap needed for MIPI-DSI (unlike SPI panels).
-     * We rotate into the back buffer while the panel scans the front. */
-    for (int px = 0; px < BOARD_LCD_H_RES; px++) {
-        for (int py = 0; py < BOARD_LCD_V_RES; py++) {
-            int fb_x = DISP_W - 1 - py;
-            out[py * BOARD_LCD_H_RES + px] = fb[px * DISP_W + fb_x];
-        }
-    }
-
-    /* Wait for vsync, then submit draw_bitmap so the DMA copy runs
-     * during the vertical blanking interval — not mid-scan. */
-    xSemaphoreTake(dpi_flush_sem, 0);             /* drain stale vsync */
-    xSemaphoreTake(dpi_flush_sem, portMAX_DELAY); /* wait for vsync start */
-    esp_lcd_panel_draw_bitmap(panel_handle, 0, 0,
-                              BOARD_LCD_H_RES, BOARD_LCD_V_RES, out);
-    st7701_rot_idx ^= 1;                          /* swap buffers */
-    lv_display_flush_ready(disp);
-}
-
-#endif /* BOARD_DISPLAY_DRIVER == DISPLAY_ST7701 */
+/* ST7701 landscape rotation: not yet implemented on esp_lvgl_port.
+ * See docs/lvgl-display-rotation.md for the full analysis and approach.
+ * Portrait mode with direct_mode + avoid_tearing works at 15fps. */
 
 /* ── IO Expander ── */
 #if BOARD_HAS_IO_EXPANDER
 static void io_expander_init(i2c_master_bus_handle_t bus)
 {
     ESP_ERROR_CHECK(esp_io_expander_new_i2c_tca9554(bus, BOARD_IO_EXPANDER_ADDR, &expander_handle));
+
     ESP_ERROR_CHECK(esp_io_expander_set_dir(expander_handle, BOARD_IO_EXPANDER_RST_PIN, IO_EXPANDER_OUTPUT));
     ESP_ERROR_CHECK(esp_io_expander_set_level(expander_handle, BOARD_IO_EXPANDER_RST_PIN, 0));
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -277,150 +214,120 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
     assert(swap_buf[0] != NULL && swap_buf[1] != NULL);
 #endif
 
-    lvgl_port_cfg_t port_cfg = {
-        .task_priority = BOARD_LVGL_TASK_PRIORITY,
-        .task_stack = BOARD_LVGL_TASK_STACK,
-        .task_affinity = BOARD_LVGL_TASK_AFFINITY,
-        .task_max_sleep_ms = BOARD_LVGL_MAX_SLEEP_MS,
-        .timer_period_ms = BOARD_LVGL_TIMER_PERIOD_MS,
-    };
-    lvgl_port_init(&port_cfg);
+    /* Initialize esp_lvgl_port (creates LVGL internals + handler task) */
+    lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    port_cfg.task_priority    = BOARD_LVGL_TASK_PRIORITY;
+    port_cfg.task_stack       = BOARD_LVGL_TASK_STACK;
+    port_cfg.task_affinity    = BOARD_LVGL_TASK_AFFINITY;
+    port_cfg.timer_period_ms  = BOARD_LVGL_TIMER_PERIOD_MS;
+    port_cfg.task_max_sleep_ms = BOARD_LVGL_MAX_SLEEP_MS;
+    port_cfg.task_stack_caps  = MALLOC_CAP_SPIRAM;
+    ESP_ERROR_CHECK(lvgl_port_init(&port_cfg));
 
-    /* Determine LVGL display dimensions based on orientation */
+    /* Determine LVGL display dimensions based on orientation.
+     * ST7701 (DSI): portrait uses direct_mode with physical dimensions;
+     *   landscape uses swapped dimensions with custom PPA flush callback.
+     * RASET / standard SPI: LVGL sees rotated dimensions; the flush
+     *   callback or MADCTL handles the physical transformation. */
+#if BOARD_DISPLAY_DRIVER != DISPLAY_ST7701
     int lvgl_hres, lvgl_vres;
-#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
-    /* MIPI-DSI DPI panels: can't rotate in hardware, and esp_lvgl_port's
-     * sw_rotate/lv_display_set_rotation paths are incompatible with the
-     * full_refresh required by DPI.  Landscape uses a custom flush callback
-     * that rotates to portrait, same pattern as the RASET boards. */
     if (landscape) {
-        lvgl_hres = BOARD_LCD_V_RES;  /* 800 */
-        lvgl_vres = BOARD_LCD_H_RES;  /* 480 */
+        lvgl_hres = BOARD_LCD_V_RES;
+        lvgl_vres = BOARD_LCD_H_RES;
     } else {
         lvgl_hres = BOARD_LCD_H_RES;
         lvgl_vres = BOARD_LCD_V_RES;
     }
-#elif BOARD_DISPLAY_QUIRK_RASET_BUG
-    if (landscape) {
-        /* Landscape on RASET board: LVGL sees rotated dimensions.
-         * Rotation is handled by the custom flush callback. */
-        lvgl_hres = BOARD_LCD_V_RES;  /* 480 */
-        lvgl_vres = BOARD_LCD_H_RES;  /* 320 */
-    } else {
-        lvgl_hres = BOARD_LCD_H_RES;  /* 320 */
-        lvgl_vres = BOARD_LCD_V_RES;  /* 480 */
-    }
-#else
-    if (landscape) {
-        /* Landscape on standard SPI board: LVGL sees swapped dimensions.
-         * Panel hardware handles rotation via MADCTL (swap_xy + mirror). */
-        lvgl_hres = BOARD_LCD_V_RES;  /* 480 */
-        lvgl_vres = BOARD_LCD_H_RES;  /* 320 */
-    } else {
-        lvgl_hres = BOARD_LCD_H_RES;  /* 320 */
-        lvgl_vres = BOARD_LCD_V_RES;  /* 480 */
-    }
 #endif
 
+    /* ── Register display ── */
+#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+    /* MIPI-DSI: direct mode with DPI hardware framebuffers.
+     * avoid_tearing uses the panel's triple-buffered framebuffers.
+     * Landscape rotation is not yet supported — see docs/lvgl-display-rotation.md. */
     lvgl_port_display_cfg_t disp_cfg = {
-        .io_handle = io_handle,
         .panel_handle = panel_handle,
-#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
-        /* MIPI-DSI: full-frame buffer.  DPI panels require full_refresh.
-         * Landscape overrides the flush callback to rotate to portrait. */
-        .buffer_size = lvgl_hres * lvgl_vres,
-#elif BOARD_DISPLAY_QUIRK_RASET_BUG
-        /* RASET boards: full-frame direct_mode with custom flush callback. */
-        .buffer_size = lvgl_hres * lvgl_vres,
-#else
-        /* Standard SPI boards: half-screen double-buffered partial updates. */
-        .buffer_size = lvgl_hres * lvgl_vres / 2,
-        .double_buffer = true,
-#endif
-        .trans_size = 0,
-        .hres = lvgl_hres,
-        .vres = lvgl_vres,
-        .color_format = LV_COLOR_FORMAT_RGB565,
-#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+        .hres         = BOARD_LCD_H_RES,
+        .vres         = BOARD_LCD_V_RES,
+        .buffer_size  = BOARD_LCD_H_RES * 50 * sizeof(lv_color16_t),
         .flags = {
-            .full_refresh = true,
+            .direct_mode = 1,
         },
-#elif BOARD_DISPLAY_QUIRK_RASET_BUG
-        .flags = {
-            .buff_spiram = true,
-            .direct_mode = true,
-        },
-#else
-        /* Hardware rotation via panel MADCTL. */
-        .rotation = {
-            .swap_xy = landscape ? true : false,
-#if defined(BOARD_DISPLAY_MIRROR_X) && BOARD_DISPLAY_MIRROR_X
-            .mirror_x = true,
-#else
-            .mirror_x = landscape ? true : false,
-#endif
-            .mirror_y = landscape ? true : false,
-        },
-        .flags = {
-            .buff_spiram = true,
-            .swap_bytes = true,
-        },
-#endif
     };
-
-    /* CRITICAL: Hold LVGL lock across display add + callback overrides.
-     * Without this, the LVGL task can run a frame with the default
-     * esp_lvgl_port flush callback, corrupting the panel's write pointer
-     * on RASET-bug boards. */
-    lvgl_port_lock(0);
-
-#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
-    /* MIPI-DSI displays use the dedicated DSI display add function
-     * which registers DPI panel event callbacks internally. */
-    lvgl_port_display_dsi_cfg_t dsi_cfg = {
-        .flags = {
-            .avoid_tearing = !landscape,
-        },
+    const lvgl_port_display_dsi_cfg_t dsi_cfg = {
+        .flags = { .avoid_tearing = 1 },
     };
     *disp_out = lvgl_port_add_disp_dsi(&disp_cfg, &dsi_cfg);
-    if (landscape) {
-        /* Override flush to rotate landscape→portrait before draw_bitmap.
-         * We manage our own vsync callback since avoid_tearing is disabled
-         * (the library's callback would conflict with our flush_ready). */
-        size_t fb_size = BOARD_LCD_H_RES * BOARD_LCD_V_RES * sizeof(uint16_t);
-        st7701_rot_buf[0] = heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM);
-        st7701_rot_buf[1] = heap_caps_malloc(fb_size, MALLOC_CAP_SPIRAM);
-        assert(st7701_rot_buf[0] != NULL && st7701_rot_buf[1] != NULL);
-        dpi_flush_sem = xSemaphoreCreateBinary();
-        esp_lcd_dpi_panel_event_callbacks_t dpi_cbs = {
-            .on_refresh_done = dpi_vsync_ready_cb,
-        };
-        esp_lcd_dpi_panel_register_event_callbacks(panel_handle, &dpi_cbs, *disp_out);
-        lv_display_set_flush_cb(*disp_out, st7701_landscape_flush_cb);
-    }
+
+#elif BOARD_DISPLAY_QUIRK_RASET_BUG
+    /* RASET boards: full-frame direct mode with custom flush callback.
+     * Don't pass io_handle — we register our own IO callback below. */
+    lvgl_port_display_cfg_t disp_cfg = {
+        .panel_handle  = panel_handle,
+        .hres          = lvgl_hres,
+        .vres          = lvgl_vres,
+        .buffer_size   = (uint32_t)lvgl_hres * lvgl_vres * sizeof(lv_color16_t),
+        .double_buffer = true,
+        .flags = {
+            .buff_spiram  = 1,
+            .direct_mode  = 1,
+        },
+    };
+    *disp_out = lvgl_port_add_disp(&disp_cfg);
+
 #else
+    /* Standard SPI boards (ST7796, ST7789): partial updates with PSRAM. */
+    lvgl_port_display_cfg_t disp_cfg = {
+        .io_handle     = io_handle,
+        .panel_handle  = panel_handle,
+        .hres          = lvgl_hres,
+        .vres          = lvgl_vres,
+        .buffer_size   = (uint32_t)lvgl_hres * (lvgl_vres / 2) * sizeof(lv_color16_t),
+        .double_buffer = true,
+        .flags = {
+            .buff_spiram = 1,
+            .swap_bytes  = 1,
+        },
+    };
     *disp_out = lvgl_port_add_disp(&disp_cfg);
 #endif
+    assert(*disp_out != NULL);
 
+    /* ── Panel MADCTL for standard SPI boards ── */
+#if BOARD_DISPLAY_DRIVER != DISPLAY_ST7701 && !BOARD_DISPLAY_QUIRK_RASET_BUG
+    if (landscape) {
+        esp_lcd_panel_swap_xy(panel_handle, true);
+        esp_lcd_panel_mirror(panel_handle, true, true);
+    } else {
+#if defined(BOARD_DISPLAY_MIRROR_X) && BOARD_DISPLAY_MIRROR_X
+        esp_lcd_panel_mirror(panel_handle, true, false);
+#endif
+    }
+#endif
+
+    /* ── Custom flush callback overrides ── */
 #if BOARD_DISPLAY_QUIRK_RASET_BUG
-    /* Override flush callback with RASET workaround */
+    lvgl_port_lock(0);
     lv_display_set_flush_cb(*disp_out,
                             landscape ? landscape_flush_cb : portrait_flush_cb);
-
+    lvgl_port_unlock();
     const esp_lcd_panel_io_callbacks_t io_cbs = {
         .on_color_trans_done = flush_ready_cb,
     };
     esp_lcd_panel_io_register_event_callbacks(io_handle, &io_cbs, *disp_out);
 #endif
 
-    lvgl_port_unlock();
-
-    /* Touch input */
-    lvgl_port_touch_cfg_t touch_cfg = {
-        .disp = *disp_out,
-        .handle = touch_handle,
-    };
-    *touch_out = lvgl_port_add_touch(&touch_cfg);
+    /* Touch input (skip if touch init failed) */
+    if (touch_handle) {
+        const lvgl_port_touch_cfg_t touch_cfg = {
+            .disp   = *disp_out,
+            .handle = touch_handle,
+        };
+        *touch_out = lvgl_port_add_touch(&touch_cfg);
+    } else {
+        ESP_LOGW(TAG, "No touch controller — skipping LVGL touch registration");
+        if (touch_out) *touch_out = NULL;
+    }
 }
 
 /* ── Board interface implementation ── */

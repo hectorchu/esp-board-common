@@ -17,8 +17,13 @@ IDF_CMD = source /opt/toolchains/esp-idf/export.sh >/dev/null 2>&1
 
 DIST_DIR = dist/$(BOARD)
 
+CMAKE_FLAGS = -DBOARD=$(BOARD)
+ifdef LANDSCAPE
+CMAKE_FLAGS += -DLANDSCAPE=1
+endif
+
 docker-build:
-	$(DOCKER_RUN) -t $(IMAGE) bash -lc '$(IDF_CMD) && idf.py --ccache -DBOARD=$(BOARD) build'
+	$(DOCKER_RUN) -t $(IMAGE) bash -lc '$(IDF_CMD) && idf.py --ccache $(CMAKE_FLAGS) build'
 
 dist: docker-build
 	rm -rf $(DIST_DIR)

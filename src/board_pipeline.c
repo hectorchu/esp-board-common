@@ -18,21 +18,45 @@
 
 #if BOARD_CAMERA_INTERFACE == CAMERA_DVP
 #include "board_pipeline_camera_dvp.h"
+#include "driver/ledc.h"
 static board_pipeline_dvp_config_t s_dvp_config;
 #elif BOARD_CAMERA_INTERFACE == CAMERA_CSI
 #include "board_pipeline_camera_csi.h"
 static board_pipeline_csi_config_t s_csi_config;
 #endif
 
+static board_pipeline_lvgl_display_config_t s_lvgl_display_config;
+
 cam_pipeline_config_t board_pipeline_default_config(void *display_parent,
                                                     void *i2c_bus)
 {
+    /* SPI panels: dummy-draw with byte-swap to fix tearing.
+     * MIPI-DSI (DPI) panels: image widget path for LVGL overlay support
+     * (QR text, FPS stats).  DPI panels don't tear, so dummy-draw isn't
+     * needed, and the image widget path gives proper background rendering. */
+#if BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
+    s_lvgl_display_config.use_dummy_draw = false;
+    s_lvgl_display_config.byte_swap = false;
+#else
+    s_lvgl_display_config.use_dummy_draw = true;
+    s_lvgl_display_config.byte_swap = true;
+#endif
+
+    /* TODO: landscape camera rotation compensation — see docs/lvgl-display-rotation.md */
+
+    /* DSI landscape: LVGL stays portrait — use physical portrait dimensions. */
+#if BOARD_LANDSCAPE && BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
     cam_pipeline_config_t config = {
         .display_width  = BOARD_LCD_H_RES,
         .display_height = BOARD_LCD_V_RES,
+#else
+    cam_pipeline_config_t config = {
+        .display_width  = BOARD_DISP_H_RES,
+        .display_height = BOARD_DISP_V_RES,
+#endif
         .rotation       = BOARD_CAMERA_ROTATION,
         .display_driver = &board_pipeline_lvgl_display_driver,
-        .display_config = NULL,
+        .display_config = &s_lvgl_display_config,
         .display_parent = display_parent,
     };
 

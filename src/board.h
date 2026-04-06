@@ -8,6 +8,7 @@
 #pragma once
 
 #include "esp_lcd_types.h"
+#include "esp_lcd_touch.h"
 #include "lvgl.h"
 
 /* ── Driver selection enums ── */
@@ -33,6 +34,23 @@ extern "C" {
 
 extern const int LCD_H_RES_VAL;
 extern const int LCD_V_RES_VAL;
+
+/* ── Compile-time orientation (from Kconfig CONFIG_BOARD_LANDSCAPE) ── */
+#ifdef CONFIG_BOARD_LANDSCAPE
+#define BOARD_LANDSCAPE  1
+#else
+#define BOARD_LANDSCAPE  0
+#endif
+
+/* Logical display dimensions — what LVGL and application code should use.
+ * In landscape mode these are the physical dimensions swapped. */
+#if BOARD_LANDSCAPE
+#define BOARD_DISP_H_RES  BOARD_LCD_V_RES
+#define BOARD_DISP_V_RES  BOARD_LCD_H_RES
+#else
+#define BOARD_DISP_H_RES  BOARD_LCD_H_RES
+#define BOARD_DISP_V_RES  BOARD_LCD_V_RES
+#endif
 
 /* ── Application-level config (not hardware — passed by the consuming project) ── */
 typedef struct {
@@ -64,7 +82,7 @@ void board_run(void);
  *
  * Creates an internal LVGL timer that forces lv_timer_handler() to
  * return within the specified interval, overriding the default
- * BOARD_LVGL_MAX_SLEEP_MS without patching esp_lvgl_port.
+ * BOARD_LVGL_MAX_SLEEP_MS.
  *
  * Call with a small value (e.g. 10) for real-time camera/animation,
  * or 0 to revert to the default idle behavior.
@@ -77,6 +95,10 @@ void board_set_render_interval_ms(uint32_t interval_ms);
 
 /** Get LCD panel handle (for diagnostic/testing that bypasses LVGL). */
 esp_lcd_panel_handle_t board_get_panel_handle(void);
+
+/** Get touch handle (for direct driver access — e.g. reading strength data
+ *  that LVGL discards). Returns NULL if touch init failed. */
+esp_lcd_touch_handle_t board_get_touch_handle(void);
 
 #ifdef __cplusplus
 }

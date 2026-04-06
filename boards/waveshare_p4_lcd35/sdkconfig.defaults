@@ -15,3 +15,6 @@ CONFIG_SPI_MASTER_ISR_IN_IRAM=y
 # Disable power management: PM clock gating can scale down APB clock and
 # gate SPI peripheral clocks, causing display transactions to fail.
 CONFIG_PM_ENABLE=n
+
+# Enable USB serial/JTAG console for serial output (same fix as P4 LCD 4.3)
+CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y

@@ -1,0 +1,25 @@
+menu "Board Common"
+
+    config BOARD_LANDSCAPE
+        bool "Landscape orientation"
+        default n
+        help
+            Rotate the display 90 degrees for landscape orientation.
+
+            When enabled, LVGL sees swapped dimensions (V_RES x H_RES)
+            and the board init code applies the appropriate flush callback
+            rotation and touch coordinate transforms.
+
+            The convenience macros BOARD_DISP_H_RES / BOARD_DISP_V_RES
+            reflect the logical (post-rotation) dimensions.
+
+    config BOARD_LOG_TO_FLASH
+        bool "Boot log to flash"
+        default n
+        help
+            Capture all ESP_LOGx output to a flash partition ("log_store").
+            The previous boot's log is dumped to serial on startup.
+            Requires a "log_store" data partition (subtype 0x42, 64KB+)
+            in the partition table.
+
+endmenu

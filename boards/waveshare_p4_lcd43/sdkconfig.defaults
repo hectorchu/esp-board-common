@@ -22,3 +22,8 @@ CONFIG_IDF_EXPERIMENTAL_FEATURES=y
 
 # Disable power management (avoids clock gating issues with display)
 CONFIG_PM_ENABLE=n
+
+# Console: primary on UART0 (ESP-IDF default).
+# Secondary on USB Serial JTAG — non-blocking output on /dev/ttyACM0
+# when a host is connected. Does not replace UART0 as the primary console.
+CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y

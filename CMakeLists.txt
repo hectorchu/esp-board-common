@@ -19,6 +19,7 @@ set(SRC_FILES
     "src/board_pipeline.c"
     "src/board_sdcard.c"
     "src/board_audio.c"
+    "src/board_log_flash.c"
 )
 
 # All dependencies listed unconditionally where possible. The #if BOARD_HAS_*
@@ -29,7 +30,7 @@ set(SRC_FILES
 # Camera components are target-conditional: DVP (esp32-camera) for S3,
 # CSI (esp_driver_cam + esp_cam_sensor) for P4.
 set(REQUIRED_COMPONENTS
-    "esp_lcd" "driver" "esp_adc" "esp_lvgl_port" "lvgl"
+    "esp_lcd" "driver" "esp_adc" "espressif__esp_lvgl_port" "lvgl"
     "espressif__esp_lcd_axs15231b" "espressif__esp_io_expander_tca9554"
     "espressif__esp_lcd_st7796"
     "espressif__esp_lcd_touch_ft5x06" "espressif__esp_lcd_touch_cst816s"
