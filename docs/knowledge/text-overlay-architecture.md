@@ -40,12 +40,22 @@ LVGL is running normally (not dummy-draw). Text is rendered as `lv_label` widget
 
 No board currently uses this configuration, but the code path exists.
 
-### 4. SPI Landscape — Future
-**Approach:** TBD. Will likely need ARGB8888 overlay layers composited over the camera feed, since the camera square doesn't leave usable gap areas in landscape orientation on small panels. This is the motivating case for eventually moving from RGB565 to ARGB overlay buffers.
+### 4. SPI Landscape Dummy-Draw (ST7796, P4 LCD 3.5)
+**Approach:** Rotated direct font rendering + black-keyed compositing.
+
+The panel stays in portrait mode (no MADCTL swap_xy). The camera rotates with the board — no PPA rotation needed, so landscape runs at the same ~10fps as portrait. Text is rendered in landscape orientation, then CPU-rotated 90° CW to portrait panel coordinates. The rotated buffer is split by region:
+- **Gap portions** (portrait y=0..79 and y=400..479): written to panel via `write_rect_to_panel()` — only on text change
+- **Camera portions** (portrait y=80..399): composited per-frame onto `frame_buf` using black-keyed RGB565 (nonzero pixels overwrite)
+
+FPS stats (montserrat_14, one stat per line) fit within the 80px landscape-right gap. QR result text spans the full 480px landscape width across both gaps and the camera feed.
+
+**Why no PPA rotation?** SPI panels with MADCTL can rotate the pixel coordinate system in hardware. But for dummy-draw mode, the camera bypasses LVGL and writes directly to the panel at portrait coordinates. The camera physically rotates with the board, so the image is already correct — applying MADCTL swap_xy would rotate it an extra 90°. The DSI 4.3" landscape suffers 2fps PPA bottleneck, but the SPI 3.5" avoids this entirely.
+
+**Why black-keyed RGB565 instead of ARGB8888?** Half the memory (2 bytes vs 4 per pixel), no alpha blend cost, and the dark-fringe anti-aliasing effect on bright camera backgrounds is acceptable. The QR text composites ~18K pixels per frame (<1ms on P4 at 400MHz).
 
 ## Future Direction: Unified Display Zone Renderer
 
-The current overlay code is tightly coupled to the QR decoder app's specific needs (FPS stats + QR result text). The three implementations (rotated canvas in main.c, overlay_text module, LVGL widgets) should eventually be generalized into a **display zone rendering layer** in esp-board-common that:
+All four overlay paths are now implemented. The overlay code is tightly coupled to the QR decoder app's specific needs (FPS stats + QR result text). The four implementations (rotated canvas in main.c, overlay_text module with portrait + landscape paths, LVGL widgets) should be generalized into a **display zone rendering layer** in esp-board-common that:
 
 - Defines **zones** (gap areas, camera-area overlays, full-screen regions) based on panel geometry and camera placement
 - Provides a **backend-agnostic API** for placing content into zones — not just text, but any app-defined UI element
@@ -54,20 +64,20 @@ The current overlay code is tightly coupled to the QR decoder app's specific nee
 - Supports apps beyond QR scanning — any app that needs to render UI alongside a camera feed or on specific screen regions
 
 ### Current state (as of 2026-04-06)
-- `src/overlay_text.c/.h` — SPI portrait gap-area backend, reusable component
+- `apps/qr_decoder/main/overlay_text.c/.h` — SPI portrait + landscape backends (gap writes, rotation, black-keyed compositing)
 - DSI landscape rotated canvas — embedded in `apps/qr_decoder/main/main.c`, needs extraction
 - DSI portrait LVGL widgets — inline in main.c, trivial
-- Shared rendering utilities (glyph_alpha, rotation kernels, bbox finder) not yet factored out
+- Shared rendering utilities (glyph_alpha, rotation kernels, bbox finder, RGB565 helpers) duplicated between overlay_text.c and main.c
 
 ### What extraction would look like
 ```
-src/camera_overlay.h              — unified API: create, set_content, zone config
-src/camera_overlay_gap.c          — SPI gap-area backend (current overlay_text.c)
-src/camera_overlay_rotated.c      — DSI rotated canvas (extracted from main.c)
-src/camera_overlay_common.c       — shared: RGB565 helpers, rotation kernels, bbox
+src/display_overlay.h             — unified API: create, set_text, zone config
+src/display_overlay.c             — dispatch + common: rotation, compositing, glyph rendering, RGB565 helpers
+src/display_overlay_spi.c         — SPI backend: gap writes, dummy-draw panel access, landscape rotation
+src/display_overlay_dsi.c         — DSI backend: LVGL canvas, rotated image widgets, ARGB overlays
 ```
 
-This is deferred — the current per-path implementations work and are documented. Unification should happen when the fourth path (SPI landscape) is implemented, since it will need to combine elements from both existing backends.
+All four paths are now implemented and tested. The next step is extraction into `src/` as a shared component.
 
 ## Key Technical Constraints
 
