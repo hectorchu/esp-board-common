@@ -48,6 +48,7 @@ typedef struct {
     uint32_t dma_stripe_lines;
     uint32_t panel_width;
     uint32_t panel_height;
+    uint32_t x_offset;      /* horizontal centering offset on panel */
     uint32_t y_offset;      /* vertical centering offset on panel */
 
     /* Per-frame overlay compositing */
@@ -78,9 +79,10 @@ static bool push_frame_dummy_draw(lvgl_display_ctx_t *ctx,
          * No byte-swap needed, no intermediate DMA buffer, single call.
          * For DPI panels, draw_bitmap does a DMA2D copy to the panel's
          * framebuffer — source can be any PSRAM-aligned buffer. */
+        uint32_t x = ctx->x_offset;
         uint32_t y = ctx->y_offset;
         esp_err_t ret = esp_lcd_panel_draw_bitmap(
-            panel, 0, y, width, y + height, rgb565_buf);
+            panel, x, y, x + width, y + height, rgb565_buf);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "draw_bitmap failed: %s", esp_err_to_name(ret));
             return false;
@@ -92,6 +94,7 @@ static bool push_frame_dummy_draw(lvgl_display_ctx_t *ctx,
     const size_t row_bytes = width * 2;
     const uint8_t *src_fb = rgb565_buf;
     uint32_t row = 0;
+    uint32_t x = ctx->x_offset;
 
     while (row < height) {
         uint32_t block = height - row;
@@ -103,7 +106,7 @@ static bool push_frame_dummy_draw(lvgl_display_ctx_t *ctx,
 
         uint32_t y = ctx->y_offset + row;
         esp_err_t ret = esp_lcd_panel_draw_bitmap(
-            panel, 0, y, width, y + block, ctx->dma_buf);
+            panel, x, y, x + width, y + block, ctx->dma_buf);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "draw_bitmap failed: %s", esp_err_to_name(ret));
             return false;
@@ -232,9 +235,11 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
 
         if (ctx->dummy_draw) {
 
-            /* Calculate centering offset */
+            /* Calculate centering offsets */
             ctx->panel_width = lv_display_get_horizontal_resolution(ctx->disp);
             ctx->panel_height = lv_display_get_vertical_resolution(ctx->disp);
+            ctx->x_offset = (ctx->panel_width > width)
+                          ? (ctx->panel_width - width) / 2 : 0;
             ctx->y_offset = (ctx->panel_height > height)
                           ? (ctx->panel_height - height) / 2 : 0;
 
@@ -251,15 +256,18 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
                  * the next on vsync.  Repeat enough times to clear them all. */
                 uint32_t clear_lines = ctx->dma_stripe_lines ? ctx->dma_stripe_lines : 50;
                 size_t clear_buf_size = ctx->panel_width * clear_lines * 2;
-                uint8_t *clear_buf = ctx->dma_buf;
+                size_t dma_buf_size = width * ctx->dma_stripe_lines * 2;
+                uint8_t *clear_buf = NULL;
                 bool free_clear_buf = false;
-                if (!clear_buf) {
-                    /* No DMA buffer (MIPI-DSI path) — allocate temporary PSRAM buffer */
+                if (ctx->dma_buf && clear_buf_size <= dma_buf_size) {
+                    /* DMA buffer is large enough for panel-wide clear */
+                    clear_buf = ctx->dma_buf;
+                    memset(clear_buf, 0, clear_buf_size);
+                } else {
+                    /* DMA buffer too small or absent — use temporary PSRAM buffer */
                     clear_buf = heap_caps_calloc(1, clear_buf_size,
                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
                     free_clear_buf = true;
-                } else {
-                    memset(clear_buf, 0, clear_buf_size);
                 }
                 if (clear_buf) {
                     esp_lcd_panel_handle_t panel = board_get_panel_handle();
@@ -274,8 +282,8 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
                     }
                 }
                 if (free_clear_buf) heap_caps_free(clear_buf);
-                ESP_LOGI(TAG, "Display cleared to black (y_offset=%"PRIu32")",
-                         ctx->y_offset);
+                ESP_LOGI(TAG, "Display cleared to black (x_offset=%"PRIu32", y_offset=%"PRIu32")",
+                         ctx->x_offset, ctx->y_offset);
             }
         }
     }

@@ -55,6 +55,7 @@ typedef struct {
     uint32_t panel_height;      /**< Panel height in pixels (e.g., 480) */
     uint32_t camera_height;     /**< Camera square height (e.g., 320) */
     bool byte_swap;             /**< true for SPI panels (RGB565 byte swap) */
+    bool landscape;             /**< true: render text rotated 90° for landscape viewing */
     void *panel_handle;         /**< esp_lcd_panel_handle_t */
     const lv_font_t *font;     /**< LVGL font for rendering */
 } overlay_text_config_t;

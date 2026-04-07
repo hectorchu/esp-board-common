@@ -30,6 +30,7 @@ CONFIG_CAM_PIPELINE_DEBUG=y
 CONFIG_CAM_PIPELINE_QR_DEBUG=y
 
 # LVGL fonts
+CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 
 # Core dump to flash — captures crash backtraces for post-mortem analysis

@@ -60,6 +60,20 @@ struct overlay_text {
      * All panel writes happen from the camera task to avoid SPI bus contention. */
     volatile bool fps_dirty;
     volatile bool qr_dirty;
+
+    /* Landscape mode: text rendered in landscape orientation, rotated 90° CCW
+     * to portrait panel coords.  Gap portions written to panel; camera-area
+     * portions composited onto frame_buf per-frame (black-keyed). */
+    bool landscape;
+    uint16_t *fps_land_buf;     /* landscape render buffer (PSRAM) */
+    uint16_t *fps_rot_buf;      /* rotated portrait buffer (PSRAM) */
+    uint32_t fps_land_w, fps_land_h;
+    uint32_t fps_rot_px, fps_rot_py;   /* portrait position of rotated buf */
+
+    uint16_t *qr_land_buf;      /* landscape render buffer (PSRAM) */
+    uint16_t *qr_rot_buf;       /* rotated portrait buffer (PSRAM) */
+    uint32_t qr_land_w, qr_land_h;
+    uint32_t qr_rot_px, qr_rot_py;    /* portrait position of rotated buf */
 };
 
 /* ── RGB565 helpers ── */
@@ -243,6 +257,65 @@ static void write_gap_to_panel(overlay_text_t *ov, const uint16_t *gap_buf,
     }
 }
 
+/* ── 90° CW rotation for RGB565 buffers ── */
+
+static void rotate_90cw_rgb565(const uint16_t *src, uint32_t src_w, uint32_t src_h,
+                               uint16_t *dst)
+{
+    /* dst dimensions: src_h wide × src_w tall */
+    for (uint32_t y = 0; y < src_h; y++) {
+        for (uint32_t x = 0; x < src_w; x++) {
+            dst[x * src_h + (src_h - 1 - y)] = src[y * src_w + x];
+        }
+    }
+}
+
+/* ── Partial-width panel write (landscape gap strips) ── */
+
+static void write_rect_to_panel(overlay_text_t *ov,
+                                const uint16_t *buf, uint32_t buf_w,
+                                uint32_t rect_h,
+                                uint32_t panel_x, uint32_t panel_y)
+{
+    if (!ov->byte_swap) {
+        esp_lcd_panel_draw_bitmap(ov->panel, panel_x, panel_y,
+                                  panel_x + buf_w, panel_y + rect_h, buf);
+        return;
+    }
+
+    /* SPI: byte-swap through DMA buffer in stripes */
+    uint32_t row = 0;
+    while (row < rect_h) {
+        uint32_t block = rect_h - row;
+        if (block > ov->dma_stripe_lines) block = ov->dma_stripe_lines;
+
+        const uint16_t *src = buf + (size_t)row * buf_w;
+        copy_swap_u16((uint16_t *)ov->dma_buf, src, (size_t)buf_w * block);
+
+        uint32_t y = panel_y + row;
+        esp_lcd_panel_draw_bitmap(ov->panel, panel_x, y,
+                                  panel_x + buf_w, y + block, ov->dma_buf);
+        row += block;
+    }
+}
+
+/* ── Black-keyed composite: nonzero overlay pixels overwrite frame ── */
+
+static void composite_black_keyed(uint16_t *frame_buf, uint32_t frame_w,
+                                  const uint16_t *overlay, uint32_t ov_w,
+                                  uint32_t ov_h,
+                                  uint32_t dst_x, uint32_t dst_y)
+{
+    for (uint32_t y = 0; y < ov_h; y++) {
+        uint16_t *dst = frame_buf + (dst_y + y) * frame_w + dst_x;
+        const uint16_t *src = overlay + y * ov_w;
+        for (uint32_t x = 0; x < ov_w; x++) {
+            if (src[x] != 0)
+                dst[x] = src[x];
+        }
+    }
+}
+
 /* ── Render + write a gap area ── */
 
 static void update_top_gap(overlay_text_t *ov, const char *fps_text)
@@ -276,6 +349,66 @@ static void update_bot_gap(overlay_text_t *ov, const char *qr_text, bool visible
     write_gap_to_panel(ov, ov->bot_buf, ov->gap_bot, bot_y);
 }
 
+/* ── Landscape update functions ── */
+
+static void update_fps_landscape(overlay_text_t *ov, const char *fps_text)
+{
+    /* Render text in landscape orientation, rotate 90° CCW, write to gap */
+    memset(ov->fps_land_buf, 0,
+           (size_t)ov->fps_land_w * ov->fps_land_h * sizeof(uint16_t));
+
+    if (fps_text && fps_text[0]) {
+        render_text_buf(ov->fps_land_buf, ov->fps_land_w, ov->fps_land_h,
+                        ov->font, fps_text,
+                        rgb565_pack(255, 255, 255),
+                        TEXT_PAD, TEXT_PAD,
+                        ov->fps_land_w - 2 * TEXT_PAD);
+    }
+
+    rotate_90cw_rgb565(ov->fps_land_buf, ov->fps_land_w, ov->fps_land_h,
+                        ov->fps_rot_buf);
+
+    /* Rotated buf is fps_land_h wide × fps_land_w tall — fully within top gap */
+    write_rect_to_panel(ov, ov->fps_rot_buf, ov->fps_land_h,
+                        ov->fps_land_w,   /* rect height = landscape width */
+                        ov->fps_rot_px, ov->fps_rot_py);
+}
+
+static void update_qr_landscape(overlay_text_t *ov, const char *qr_text, bool visible)
+{
+    /* Render text in landscape orientation, rotate 90° CCW */
+    memset(ov->qr_land_buf, 0,
+           (size_t)ov->qr_land_w * ov->qr_land_h * sizeof(uint16_t));
+
+    if (visible && qr_text && qr_text[0]) {
+        render_text_buf(ov->qr_land_buf, ov->qr_land_w, ov->qr_land_h,
+                        ov->font, qr_text,
+                        rgb565_pack(0, 255, 0),
+                        TEXT_PAD, TEXT_PAD,
+                        ov->qr_land_w - 2 * TEXT_PAD);
+    }
+
+    rotate_90cw_rgb565(ov->qr_land_buf, ov->qr_land_w, ov->qr_land_h,
+                        ov->qr_rot_buf);
+
+    /* Rotated buf is qr_land_h wide × qr_land_w tall, spans full panel height.
+     * Write the gap portions to the panel now. Camera portion composited per-frame. */
+    uint32_t rot_w = ov->qr_land_h;   /* rotated width */
+    uint32_t px = ov->qr_rot_px;
+
+    /* Top gap: rotated rows 0..gap_top-1 */
+    write_rect_to_panel(ov, ov->qr_rot_buf,
+                        rot_w, ov->gap_top,
+                        px, 0);
+
+    /* Bottom gap: rotated rows (panel_h - gap_bot)..panel_h-1 */
+    uint32_t bot_y = ov->panel_h - ov->gap_bot;
+    const uint16_t *bot_src = ov->qr_rot_buf + (size_t)bot_y * rot_w;
+    write_rect_to_panel(ov, bot_src,
+                        rot_w, ov->gap_bot,
+                        px, bot_y);
+}
+
 /* ── Public API ── */
 
 overlay_text_t *overlay_text_create(const overlay_text_config_t *cfg)
@@ -307,27 +440,65 @@ overlay_text_t *overlay_text_create(const overlay_text_config_t *cfg)
     ov->cam_y = gap_top;
     ov->byte_swap = cfg->byte_swap;
     ov->font = cfg->font;
+    ov->landscape = cfg->landscape;
     portMUX_INITIALIZE(&ov->lock);
 
-    /* Allocate gap buffers in PSRAM */
-    if (gap_top > 0) {
-        size_t top_size = (size_t)cfg->panel_width * gap_top * sizeof(uint16_t);
-        ov->top_buf = heap_caps_calloc(1, top_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (!ov->top_buf) {
-            ESP_LOGE(TAG, "Failed to allocate top gap buffer (%zu bytes)", top_size);
+    if (cfg->landscape) {
+        /* ── Landscape buffer allocation ──
+         * FPS: 80w × 130h landscape → 130w × 80h rotated (gap-only)
+         * QR:  480w × 56h landscape → 56w × 480h rotated (full panel height) */
+        ov->fps_land_w = gap_top;   /* 80 — landscape width = gap size */
+        ov->fps_land_h = 80;        /* 4 lines of montserrat_14 (~16px each) + padding */
+        ov->qr_land_w = cfg->panel_height;  /* 480 — full landscape width */
+        ov->qr_land_h = 40;         /* 2 lines of montserrat_14 + padding */
+
+        /* FPS rotated position: landscape right (portrait bottom gap) */
+        ov->fps_rot_px = cfg->panel_width - ov->fps_land_h - TEXT_PAD;
+        ov->fps_rot_py = cfg->panel_height - gap_bot;  /* bottom gap */
+
+        /* QR rotated position: near landscape bottom (portrait left side) */
+        ov->qr_rot_px = TEXT_PAD;
+        ov->qr_rot_py = 0;   /* spans full panel height */
+
+        size_t fps_px = (size_t)ov->fps_land_w * ov->fps_land_h;
+        size_t qr_px  = (size_t)ov->qr_land_w  * ov->qr_land_h;
+
+        ov->fps_land_buf = heap_caps_calloc(1, fps_px * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        ov->fps_rot_buf  = heap_caps_calloc(1, fps_px * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        ov->qr_land_buf  = heap_caps_calloc(1, qr_px * 2,  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        ov->qr_rot_buf   = heap_caps_calloc(1, qr_px * 2,  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+
+        if (!ov->fps_land_buf || !ov->fps_rot_buf ||
+            !ov->qr_land_buf  || !ov->qr_rot_buf) {
+            ESP_LOGE(TAG, "Failed to allocate landscape buffers");
+            heap_caps_free(ov->fps_land_buf);
+            heap_caps_free(ov->fps_rot_buf);
+            heap_caps_free(ov->qr_land_buf);
+            heap_caps_free(ov->qr_rot_buf);
             free(ov);
             return NULL;
         }
-    }
+    } else {
+        /* ── Portrait gap buffer allocation ── */
+        if (gap_top > 0) {
+            size_t top_size = (size_t)cfg->panel_width * gap_top * sizeof(uint16_t);
+            ov->top_buf = heap_caps_calloc(1, top_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!ov->top_buf) {
+                ESP_LOGE(TAG, "Failed to allocate top gap buffer (%zu bytes)", top_size);
+                free(ov);
+                return NULL;
+            }
+        }
 
-    if (gap_bot > 0) {
-        size_t bot_size = (size_t)cfg->panel_width * gap_bot * sizeof(uint16_t);
-        ov->bot_buf = heap_caps_calloc(1, bot_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (!ov->bot_buf) {
-            ESP_LOGE(TAG, "Failed to allocate bottom gap buffer (%zu bytes)", bot_size);
-            heap_caps_free(ov->top_buf);
-            free(ov);
-            return NULL;
+        if (gap_bot > 0) {
+            size_t bot_size = (size_t)cfg->panel_width * gap_bot * sizeof(uint16_t);
+            ov->bot_buf = heap_caps_calloc(1, bot_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!ov->bot_buf) {
+                ESP_LOGE(TAG, "Failed to allocate bottom gap buffer (%zu bytes)", bot_size);
+                heap_caps_free(ov->top_buf);
+                free(ov);
+                return NULL;
+            }
         }
     }
 
@@ -341,15 +512,20 @@ overlay_text_t *overlay_text_create(const overlay_text_config_t *cfg)
             ESP_LOGE(TAG, "Failed to allocate DMA stripe buffer");
             heap_caps_free(ov->bot_buf);
             heap_caps_free(ov->top_buf);
+            heap_caps_free(ov->fps_land_buf);
+            heap_caps_free(ov->fps_rot_buf);
+            heap_caps_free(ov->qr_land_buf);
+            heap_caps_free(ov->qr_rot_buf);
             free(ov);
             return NULL;
         }
     }
 
     ESP_LOGI(TAG, "Created: panel %"PRIu32"x%"PRIu32", gaps %"PRIu32"+%"PRIu32
-             "px, font h=%"PRId32,
+             "px, font h=%"PRId32", %s",
              cfg->panel_width, cfg->panel_height,
-             gap_top, gap_bot, cfg->font->line_height);
+             gap_top, gap_bot, cfg->font->line_height,
+             cfg->landscape ? "landscape" : "portrait");
     return ov;
 }
 
@@ -394,10 +570,6 @@ void overlay_text_cb(uint8_t *frame_buf, uint32_t width,
     overlay_text_t *ov = (overlay_text_t *)user_ctx;
     if (!ov) return;
 
-    (void)frame_buf;
-    (void)width;
-    (void)height;
-
     /* All panel writes happen here (camera task) to avoid SPI bus contention
      * with push_frame_dummy_draw which also runs in this task. */
 
@@ -410,25 +582,61 @@ void overlay_text_cb(uint8_t *frame_buf, uint32_t width,
         }
     }
 
-    /* Update FPS gap if dirty */
-    if (ov->fps_dirty) {
-        ov->fps_dirty = false;
-        char snap[FPS_TEXT_MAX];
-        taskENTER_CRITICAL(&ov->lock);
-        memcpy(snap, ov->fps_text, FPS_TEXT_MAX);
-        taskEXIT_CRITICAL(&ov->lock);
-        update_top_gap(ov, snap);
-    }
+    if (ov->landscape) {
+        /* ── Landscape path ── */
 
-    /* Update QR gap if dirty */
-    if (ov->qr_dirty) {
-        ov->qr_dirty = false;
-        char snap[QR_TEXT_MAX];
-        bool vis;
-        taskENTER_CRITICAL(&ov->lock);
-        memcpy(snap, ov->qr_text, QR_TEXT_MAX);
-        vis = ov->qr_visible;
-        taskEXIT_CRITICAL(&ov->lock);
-        update_bot_gap(ov, snap, vis);
+        if (ov->fps_dirty) {
+            ov->fps_dirty = false;
+            char snap[FPS_TEXT_MAX];
+            taskENTER_CRITICAL(&ov->lock);
+            memcpy(snap, ov->fps_text, FPS_TEXT_MAX);
+            taskEXIT_CRITICAL(&ov->lock);
+            update_fps_landscape(ov, snap);
+        }
+
+        if (ov->qr_dirty) {
+            ov->qr_dirty = false;
+            char snap[QR_TEXT_MAX];
+            bool vis;
+            taskENTER_CRITICAL(&ov->lock);
+            memcpy(snap, ov->qr_text, QR_TEXT_MAX);
+            vis = ov->qr_visible;
+            taskEXIT_CRITICAL(&ov->lock);
+            update_qr_landscape(ov, snap, vis);
+        }
+
+        /* Per-frame: composite QR camera-area strip onto frame_buf.
+         * The rotated QR buffer spans the full panel height; the camera
+         * portion is rows gap_top..(panel_h - gap_bot - 1). */
+        if (ov->qr_visible && frame_buf) {
+            uint32_t rot_w = ov->qr_land_h;  /* rotated width */
+            uint32_t cam_rows = ov->panel_h - ov->gap_top - ov->gap_bot;
+            const uint16_t *cam_src = ov->qr_rot_buf + (size_t)ov->gap_top * rot_w;
+            composite_black_keyed((uint16_t *)frame_buf, width,
+                                  cam_src, rot_w, cam_rows,
+                                  ov->qr_rot_px, 0);
+        }
+    } else {
+        /* ── Portrait path ── */
+
+        if (ov->fps_dirty) {
+            ov->fps_dirty = false;
+            char snap[FPS_TEXT_MAX];
+            taskENTER_CRITICAL(&ov->lock);
+            memcpy(snap, ov->fps_text, FPS_TEXT_MAX);
+            taskEXIT_CRITICAL(&ov->lock);
+            update_top_gap(ov, snap);
+        }
+
+        if (ov->qr_dirty) {
+            ov->qr_dirty = false;
+            char snap[QR_TEXT_MAX];
+            bool vis;
+            taskENTER_CRITICAL(&ov->lock);
+            memcpy(snap, ov->qr_text, QR_TEXT_MAX);
+            vis = ov->qr_visible;
+            taskEXIT_CRITICAL(&ov->lock);
+            update_bot_gap(ov, snap, vis);
+        }
     }
 }

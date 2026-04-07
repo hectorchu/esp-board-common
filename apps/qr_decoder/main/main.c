@@ -326,8 +326,14 @@ static void update_fps_stats(void)
         rotated_overlay_update(&fps_overlay, buf, lv_color_white());
     }
 #elif BOARD_DISPLAY_DRIVER != DISPLAY_ST7701
+#if BOARD_LANDSCAPE
+    /* One stat per line — fits the narrow 80px landscape gap strip */
+    snprintf(buf, sizeof(buf), "cam: %.0f\ndisp: %.0f\nscan: %.0f\ndet: %.0f",
+             ema_cam, ema_disp, ema_scan, ema_det);
+#else
     snprintf(buf, sizeof(buf), "cam: %.0f  disp: %.0f\nscan: %.0f  det: %.0f",
              ema_cam, ema_disp, ema_scan, ema_det);
+#endif
     overlay_text_set_fps(s_overlay, buf);
 #else
     snprintf(buf, sizeof(buf), "cam: %.0f  disp: %.0f\nscan: %.0f  det: %.0f",
@@ -469,12 +475,15 @@ void app_main(void)
     ESP_LOGI(TAG, "QR decoder starting");
 
     /* Initialize board hardware.
-     * DSI landscape: LVGL stays portrait — overlays handle visual rotation.
-     * Pass landscape=false so LVGL + touch use portrait coordinates. */
+     * Landscape: LVGL and panel stay in portrait orientation.
+     * DSI: rotated canvas overlays handle visual rotation.
+     * SPI dummy-draw: panel stays portrait — camera rotates with the board,
+     *   so MADCTL swap_xy would just rotate the image an extra 90°.
+     *   Text overlays rendered rotated manually. */
     lv_display_t *disp;
     lv_indev_t *touch;
-#if BOARD_LANDSCAPE && BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
-    ESP_LOGI(TAG, "DSI landscape mode: LVGL stays portrait, overlays rotated");
+#if BOARD_LANDSCAPE
+    ESP_LOGI(TAG, "Landscape mode: panel stays portrait, overlays handle rotation");
     board_app_config_t app_cfg = { .landscape = false };
 #else
     board_app_config_t app_cfg = { .landscape = BOARD_LANDSCAPE };
@@ -501,15 +510,21 @@ void app_main(void)
     pipeline_cfg.display_height = square;
 
 #if BOARD_DISPLAY_DRIVER != DISPLAY_ST7701
-    /* SPI dummy-draw: create direct text overlay in panel gap areas */
+    /* SPI dummy-draw: create direct text overlay (portrait gap areas or
+     * landscape rotated overlays — see overlay_text.c for both paths). */
     {
         overlay_text_config_t ov_cfg = {
             .panel_width    = BOARD_LCD_H_RES,
             .panel_height   = BOARD_LCD_V_RES,
             .camera_height  = square,
             .byte_swap      = true,   /* SPI panels need byte-swap */
+            .landscape      = BOARD_LANDSCAPE,
             .panel_handle   = board_get_panel_handle(),
+#if BOARD_LANDSCAPE
+            .font           = &lv_font_montserrat_14,
+#else
             .font           = &lv_font_montserrat_24,
+#endif
         };
         s_overlay = overlay_text_create(&ov_cfg);
         if (s_overlay) {
