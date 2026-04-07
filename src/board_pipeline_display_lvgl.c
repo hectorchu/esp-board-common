@@ -14,6 +14,7 @@
  *    LVGL overlays are NOT rendered while dummy-draw is active.
  */
 #include "board_pipeline_display_lvgl.h"
+#include "overlay_util.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -55,16 +56,6 @@ typedef struct {
     pipeline_overlay_cb_t overlay_cb;
     void *overlay_cb_ctx;
 } lvgl_display_ctx_t;
-
-/* ── Byte-swap helper (RGB565 endianness for SPI) ── */
-
-static inline void copy_swap_u16(uint16_t *dst, const uint16_t *src, size_t count)
-{
-    while (count--) {
-        uint16_t p = *src++;
-        *dst++ = (uint16_t)((p << 8) | (p >> 8));
-    }
-}
 
 /* ── Dummy-draw push: striped DMA blit bypassing LVGL ── */
 

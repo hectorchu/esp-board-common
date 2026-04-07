@@ -1,12 +1,9 @@
 /**
  * Direct text overlay for SPI dummy-draw displays.
  *
- * One of four text overlay paths in the QR decoder (see
- * docs/knowledge/text-overlay-architecture.md for the full picture):
- *   1. DSI landscape  — pre-rendered rotated canvas + bbox crop
- *   2. SPI portrait   — THIS MODULE: direct font render into panel gap areas
- *   3. DSI portrait   — standard LVGL label widgets
- *   4. SPI landscape  — future (ARGB compositing)
+ * Renders LVGL font glyphs directly into gap-area buffers above/below the
+ * camera feed, then writes to the panel via esp_lcd_panel_draw_bitmap().
+ * Works in both portrait and landscape orientations.
  *
  * Why direct rendering instead of LVGL widgets?
  *   SPI dummy-draw mode calls lvgl_port_stop() to eliminate tearing.

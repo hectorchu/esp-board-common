@@ -18,7 +18,7 @@ Built as an ESP-IDF component. Apps reference it via `EXTRA_COMPONENT_DIRS` and 
 
 ```
 esp-board-common/
-├── src/                    # Component source (drivers, init, LVGL integration)
+├── src/                    # Component source (drivers, init, LVGL integration, overlays)
 ├── boards/                 # Per-board config (board_config.h, sdkconfig.defaults)
 │   ├── waveshare_s3_lcd35b/
 │   ├── waveshare_s3_lcd35/
@@ -26,7 +26,8 @@ esp-board-common/
 │   ├── waveshare_p4_lcd35/
 │   └── waveshare_p4_lcd43/
 ├── apps/                   # Standalone demo applications
-│   └── camera_viewfinder/
+│   ├── qr_decoder/
+│   └── touch_test/
 ├── CMakeLists.txt          # ESP-IDF component registration
 ├── idf_component.yml       # Component registry dependencies
 └── docs/
@@ -97,6 +98,19 @@ Both interfaces use the same unified API (`board_camera_init`, `board_camera_fb_
 
 On ESP32-P4 boards, the PPA (Pixel Processing Accelerator) hardware engine provides zero-CPU-cost downscaling from the sensor resolution (800x1280) to the display (480x800). The camera viewfinder app demonstrates this with fullscreen, hardware-accelerated live video.
 
+## Text overlays
+
+Reusable text overlay modules for rendering on-screen text alongside a live camera feed. Two backends handle different display interfaces:
+
+| Module | Interface | Approach |
+|--------|-----------|----------|
+| `overlay_text` | SPI (dummy-draw) | Direct LVGL font glyph rendering into gap-area buffers, with DMA panel writes. Supports portrait and landscape (CPU-rotated + black-keyed compositing). |
+| `overlay_rotated` | MIPI-DSI (landscape) | Hidden LVGL canvas rendering, bounding-box crop, CPU 90° CCW rotation, displayed as `lv_image`. Supports RGB565 (opaque) and ARGB8888 (transparent). |
+
+Shared RGB565 utilities (`rgb565_pack`, `alpha_blend_rgb565`, `copy_swap_u16`) live in `overlay_util.h` (header-only).
+
+The SPI backend renders directly because LVGL is halted in dummy-draw mode. The DSI backend uses LVGL canvas/image widgets because `transform_rotation` is incompatible with `direct_mode`. See `docs/knowledge/text-overlay-architecture.md` for the full design rationale.
+
 ## API
 
 ### `board_init()`
@@ -117,4 +131,4 @@ Synchronous frame capture. `fb_get` blocks until a frame is available; `fb_retur
 
 ## Building apps
 
-See [apps/camera_viewfinder/](apps/camera_viewfinder/) for a complete example with Docker build, ccache, and per-board dist output.
+See [apps/qr_decoder/](apps/qr_decoder/) for a complete example with Docker build, camera pipeline, text overlays, and per-board dist output.

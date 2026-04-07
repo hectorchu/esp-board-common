@@ -20,6 +20,8 @@ set(SRC_FILES
     "src/board_sdcard.c"
     "src/board_audio.c"
     "src/board_log_flash.c"
+    "src/overlay_text.c"
+    "src/overlay_rotated.c"
 )
 
 # All dependencies listed unconditionally where possible. The #if BOARD_HAS_*
