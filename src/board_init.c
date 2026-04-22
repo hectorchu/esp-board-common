@@ -36,6 +36,8 @@
 #include "board_display_st7789.h"
 #elif BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
 #include "board_display_st7701.h"
+#elif BOARD_DISPLAY_DRIVER == DISPLAY_QEMU
+#include "esp_lcd_qemu_rgb.h"
 #endif
 
 #if BOARD_TOUCH_DRIVER == TOUCH_AXS15231B
@@ -187,6 +189,17 @@ static void landscape_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_
  * See docs/lvgl-display-rotation.md for the full analysis and approach.
  * Portrait mode with direct_mode + avoid_tearing works at 15fps. */
 
+static void qemu_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
+{
+    if (lv_display_flush_is_last(disp)) {
+        void *fb;
+        esp_lcd_rgb_qemu_get_frame_buffer(panel_handle, &fb);
+        memcpy(fb, px_map, BOARD_LCD_H_RES * BOARD_LCD_V_RES * 2);
+        esp_lcd_rgb_qemu_refresh(panel_handle);
+    }
+    lv_display_flush_ready(disp);
+}
+
 /* ── IO Expander ── */
 #if BOARD_HAS_IO_EXPANDER
 static void io_expander_init(i2c_master_bus_handle_t bus)
@@ -258,6 +271,20 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
         .flags = { .avoid_tearing = 1 },
     };
     *disp_out = lvgl_port_add_disp_dsi(&disp_cfg, &dsi_cfg);
+
+#elif BOARD_DISPLAY_DRIVER == DISPLAY_QEMU
+    lvgl_port_display_cfg_t disp_cfg = {
+        .panel_handle = panel_handle,
+        .hres         = lvgl_hres,
+        .vres         = lvgl_vres,
+        .buffer_size  = lvgl_hres * lvgl_vres,
+        .flags = {
+            .direct_mode = 1,
+        },
+    };
+    lvgl_port_display_rgb_cfg_t rgb_cfg = { 0 };
+    *disp_out = lvgl_port_add_disp_rgb(&disp_cfg, &rgb_cfg);
+    lv_display_set_flush_cb(*disp_out, qemu_flush_cb);
 
 #elif BOARD_DISPLAY_QUIRK_RASET_BUG
     /* RASET boards: full-frame direct mode with custom flush callback.
@@ -363,6 +390,15 @@ int board_init(const board_app_config_t *app_cfg,
                                BOARD_LCD_H_RES * BOARD_LCD_V_RES * sizeof(lv_color16_t));
 #elif BOARD_DISPLAY_DRIVER == DISPLAY_ST7701
     board_display_st7701_init(&io_handle, &panel_handle);
+#elif BOARD_DISPLAY_DRIVER == DISPLAY_QEMU
+    esp_lcd_rgb_qemu_config_t panel_config = {
+        .width  = BOARD_LCD_V_RES,
+        .height = BOARD_LCD_H_RES,
+        .bpp    = RGB_QEMU_BPP_16,
+    };
+    ESP_ERROR_CHECK(esp_lcd_new_rgb_qemu(&panel_config, &panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
 #endif
 
     /* Step 4: PMIC (if present — after display is fully initialized) */

@@ -13,7 +13,7 @@
 #define BOARD_NAME              "Waveshare ESP32-S3 Touch LCD 3.5B"
 
 /* ── Display ── */
-#define BOARD_DISPLAY_DRIVER    DISPLAY_AXS15231B
+#define BOARD_DISPLAY_DRIVER    DISPLAY_QEMU
 #define BOARD_LCD_H_RES         320
 #define BOARD_LCD_V_RES         480
 #define BOARD_PIN_LCD_SCLK      GPIO_NUM_5
@@ -29,16 +29,16 @@
 
 /* ── Display quirks ── */
 #define BOARD_DISPLAY_QSPI              1   /* Uses QSPI (4 data lines) */
-#define BOARD_DISPLAY_QUIRK_RASET_BUG   1   /* CASET/RASET broken over QSPI */
+#define BOARD_DISPLAY_QUIRK_RASET_BUG   0   /* CASET/RASET broken over QSPI */
 #define BOARD_DISPLAY_DIRECT_MODE       1   /* LVGL direct mode for RASET workaround */
 
 /* ── IO Expander (for display reset) ── */
-#define BOARD_HAS_IO_EXPANDER   1
+#define BOARD_HAS_IO_EXPANDER   0
 #define BOARD_IO_EXPANDER_ADDR  ESP_IO_EXPANDER_I2C_TCA9554_ADDRESS_000
 #define BOARD_IO_EXPANDER_RST_PIN  IO_EXPANDER_PIN_NUM_1
 
 /* ── Touch ── */
-#define BOARD_TOUCH_DRIVER      TOUCH_AXS15231B
+#define BOARD_TOUCH_DRIVER      0
 
 /* ── I2C ── */
 #define BOARD_PIN_I2C_SDA       GPIO_NUM_8
@@ -46,7 +46,7 @@
 #define BOARD_I2C_PORT          0
 
 /* ── PMIC ── */
-#define BOARD_HAS_PMIC          1
+#define BOARD_HAS_PMIC          0
 #define BOARD_PMIC_DRIVER       PMIC_AXP2101
 
 /* ── LVGL port tuning ── */

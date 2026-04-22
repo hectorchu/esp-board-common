@@ -16,6 +16,7 @@
 #define DISPLAY_ST7789      2
 #define DISPLAY_AXS15231B   3
 #define DISPLAY_ST7701      4
+#define DISPLAY_QEMU        5
 
 #define TOUCH_FT6336        1
 #define TOUCH_CST816D       2
