@@ -10,6 +10,7 @@ CONFIG_SPIRAM_TYPE_AUTO=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_LV_CONF_SKIP=n
 
 # SPI display requires ISR in IRAM so SPI transaction interrupts are not
 # blocked by flash cache misses. Without this, display DMA from SPIRAM fails.

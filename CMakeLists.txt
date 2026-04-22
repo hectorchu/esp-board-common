@@ -42,6 +42,7 @@ set(REQUIRED_COMPONENTS
     "espressif__esp_codec_dev"
     "waveshare__pcf85063a" "waveshare__qmi8658"
     "esp-camera-pipeline"
+    "mweb"
 )
 
 # MIPI-DSI display (ESP32-P4): ST7701 + LDO regulator
