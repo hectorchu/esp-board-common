@@ -16,6 +16,7 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "spi_flash_chip_driver.h"
 
 #include "board.h"
 #include "board_config.h"
@@ -364,12 +365,42 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
 
 /* ── Board interface implementation ── */
 
+esp_err_t esp_psram_init(void);
+esp_err_t esp_psram_extram_add_to_heap_allocator(void);
+
+esp_err_t (*orig_flash_read)(esp_flash_t *chip, void *buffer, uint32_t address, uint32_t length);
+esp_err_t qemu_flash_read(esp_flash_t *chip, void *buffer, uint32_t address, uint32_t length) {
+    char buf[64];
+    while (length) {
+        uint32_t len = length;
+        if (len > 64) len = 64;
+        esp_err_t err = orig_flash_read(chip, buf, address, len);
+        if (err != ESP_OK) return err;
+        memcpy(buffer, buf + 2, len - 2);
+        address += len;
+        buffer += len;
+        length -= len;
+        err = orig_flash_read(chip, buf, address - 2, 4);
+        if (err != ESP_OK) return err;
+        memcpy(buffer - 2, buf + 2, 2);
+    }
+    return ESP_OK;
+}
+
 int board_init(const board_app_config_t *app_cfg,
                lv_display_t **disp, lv_indev_t **touch_indev)
 {
     ESP_LOGI(TAG, "Initializing %s...", BOARD_NAME);
 
     bool landscape = app_cfg && app_cfg->landscape;
+
+    esp_psram_init();
+    esp_psram_extram_add_to_heap_allocator();
+    heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
+
+    spi_flash_chip_t *drv = (spi_flash_chip_t*)esp_flash_default_chip->chip_drv;
+    orig_flash_read = drv->read;
+    drv->read = qemu_flash_read;
 
     /* Step 1: I2C bus */
     i2c_master_bus_handle_t i2c_bus = board_i2c_init(
