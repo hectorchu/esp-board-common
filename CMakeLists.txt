@@ -78,3 +78,5 @@ else()
     message(WARNING "board_common: No board config directory found. "
                     "Set BOARD_CONFIG_DIR or BOARD CMake variable.")
 endif()
+
+fatfs_create_partition_image(ffat ../../../vfs FLASH_IN_PROJECT PRESERVE_TIME)
