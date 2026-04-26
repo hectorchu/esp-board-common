@@ -214,11 +214,6 @@ static void io_expander_init(i2c_master_bus_handle_t bus)
 }
 #endif
 
-void *lvgl_psram_alloc(size_t size)
-{
-    return heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-}
-
 /* ── LVGL port setup ── */
 static void lvgl_port_setup(const board_app_config_t *app_cfg,
                             lv_display_t **disp_out, lv_indev_t **touch_out)
