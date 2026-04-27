@@ -189,6 +189,7 @@ static void landscape_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_
  * See docs/lvgl-display-rotation.md for the full analysis and approach.
  * Portrait mode with direct_mode + avoid_tearing works at 15fps. */
 
+#if BOARD_DISPLAY_DRIVER == DISPLAY_QEMU
 static void qemu_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     if (lv_display_flush_is_last(disp)) {
@@ -199,6 +200,7 @@ static void qemu_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px
     }
     lv_display_flush_ready(disp);
 }
+#endif
 
 /* ── IO Expander ── */
 #if BOARD_HAS_IO_EXPANDER
