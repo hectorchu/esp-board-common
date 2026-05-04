@@ -1,2 +1,4 @@
-#define LV_MEM_POOL_ALLOC malloc
+#define LV_USE_LODEPNG 1
+#define LV_USE_PRIVATE_API 1
+#define LV_USE_STDLIB_MALLOC LV_STDLIB_CLIB
 #define MP_CONFIGFILE "mpconfig_esp32.h"
