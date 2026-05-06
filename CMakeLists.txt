@@ -79,4 +79,4 @@ else()
                     "Set BOARD_CONFIG_DIR or BOARD CMake variable.")
 endif()
 
-fatfs_create_partition_image(ffat ../../../vfs FLASH_IN_PROJECT PRESERVE_TIME)
+fatfs_create_partition_image(ffat ../../../deps/seedsigner/src FLASH_IN_PROJECT PRESERVE_TIME)
