@@ -451,6 +451,11 @@ int board_init(const board_app_config_t *app_cfg,
     }
 #elif BOARD_TOUCH_DRIVER == TOUCH_CST816D
     touch_handle = board_touch_cst816d_init(i2c_bus, touch_x_max, touch_y_max);
+    if (landscape) {
+        touch_handle->config.flags.swap_xy = 1;
+        touch_handle->config.flags.mirror_x = 1;
+        touch_handle->config.flags.mirror_y = 0;
+    }
 #elif BOARD_TOUCH_DRIVER == TOUCH_GT911
     touch_handle = board_touch_gt911_init(i2c_bus, touch_x_max, touch_y_max);
     if (landscape) {

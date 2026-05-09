@@ -40,9 +40,6 @@
 #define BOARD_TOUCH_SWAP_XY     0
 #define BOARD_TOUCH_MIRROR_X    0
 #define BOARD_TOUCH_MIRROR_Y    0
-/* Waveshare demo passes x_max=V_RES, y_max=H_RES (swapped) */
-#define BOARD_TOUCH_X_MAX       BOARD_LCD_V_RES
-#define BOARD_TOUCH_Y_MAX       BOARD_LCD_H_RES
 
 /* ── I2C ── */
 #define BOARD_PIN_I2C_SDA       GPIO_NUM_48
