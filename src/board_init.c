@@ -311,7 +311,7 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
         .panel_handle  = panel_handle,
         .hres          = lvgl_hres,
         .vres          = lvgl_vres,
-        .buffer_size   = (uint32_t)lvgl_hres * (lvgl_vres / 2) * sizeof(lv_color16_t),
+        .buffer_size   = (uint32_t)lvgl_hres * (lvgl_vres / 10),
         .double_buffer = true,
         .flags = {
             .buff_spiram = 1,
@@ -326,7 +326,7 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
 #if BOARD_DISPLAY_DRIVER != DISPLAY_ST7701 && !BOARD_DISPLAY_QUIRK_RASET_BUG
     if (landscape) {
         esp_lcd_panel_swap_xy(panel_handle, true);
-        esp_lcd_panel_mirror(panel_handle, true, true);
+        esp_lcd_panel_mirror(panel_handle, true, false);
     } else {
 #if defined(BOARD_DISPLAY_MIRROR_X) && BOARD_DISPLAY_MIRROR_X
         esp_lcd_panel_mirror(panel_handle, true, false);
@@ -371,9 +371,11 @@ int board_init(const board_app_config_t *app_cfg,
 
     bool landscape = app_cfg && app_cfg->landscape;
 
+#if BOARD_DISPLAY_DRIVER == DISPLAY_QEMU
     esp_psram_init();
     esp_psram_extram_add_to_heap_allocator();
     heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
+#endif
 
     /* Step 1: I2C bus */
     i2c_master_bus_handle_t i2c_bus = board_i2c_init(
