@@ -49,8 +49,8 @@ esp_err_t board_camera_init(void *i2c_bus, uint16_t width, uint16_t height)
     config.pin_pclk = BOARD_PIN_CAM_PCLK;
     config.pin_vsync = BOARD_PIN_CAM_VSYNC;
     config.pin_href = BOARD_PIN_CAM_HREF;
-    config.pin_sccb_sda = -1;
-    config.pin_sccb_scl = -1;
+    config.pin_sccb_sda = BOARD_PIN_CAM_SIOD;
+    config.pin_sccb_scl = BOARD_PIN_CAM_SIOC;
     config.sccb_i2c_port = BOARD_I2C_PORT;
     config.pin_pwdn = BOARD_PIN_CAM_PWDN;
     config.pin_reset = BOARD_PIN_CAM_RESET;
@@ -69,7 +69,7 @@ esp_err_t board_camera_init(void *i2c_bus, uint16_t width, uint16_t height)
     }
 
     sensor_t *s = esp_camera_sensor_get();
-    s->set_vflip(s, 1);
+    s->set_hmirror(s, 1);
 
     ESP_LOGI(TAG, "DVP camera initialized (%dx%d)", width, height);
     return ESP_OK;

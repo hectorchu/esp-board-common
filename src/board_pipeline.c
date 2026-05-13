@@ -81,8 +81,8 @@ cam_pipeline_config_t board_pipeline_default_config(void *display_parent,
         .ledc_timer    = BOARD_CAM_LEDC_TIMER,
         .ledc_channel  = BOARD_CAM_LEDC_CHANNEL,
         .sccb_i2c_port = BOARD_I2C_PORT,
-        .frame_width   = 640, /* VGA — pipeline crops to display size */
-        .frame_height  = 480,
+        .frame_width   = 240,
+        .frame_height  = 240,
     };
     config.camera_driver = &board_pipeline_dvp_driver;
     config.camera_config = &s_dvp_config;

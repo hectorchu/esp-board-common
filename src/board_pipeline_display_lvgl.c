@@ -28,7 +28,7 @@
 
 static const char *TAG = "pipeline_disp_lvgl";
 
-#define DMA_STRIPE_LINES_DEFAULT  120
+#define DMA_STRIPE_LINES_DEFAULT  60
 #define DMA_STRIPE_LINES_MIN      10
 #define DMA_BUF_ALIGN             64   /* safe for SPI DMA on all targets */
 
@@ -45,7 +45,7 @@ typedef struct {
     bool dummy_draw;
     bool byte_swap;
     lv_display_t *disp;
-    uint8_t *dma_buf;
+    uint8_t *dma_buf[2];
     uint32_t dma_stripe_lines;
     uint32_t panel_width;
     uint32_t panel_height;
@@ -87,17 +87,17 @@ static bool push_frame_dummy_draw(lvgl_display_ctx_t *ctx,
     uint32_t row = 0;
     uint32_t x = ctx->x_offset;
 
-    while (row < height) {
+    for (int i = 0; row < height; i++) {
         uint32_t block = height - row;
         if (block > ctx->dma_stripe_lines)
             block = ctx->dma_stripe_lines;
 
         const uint16_t *src = (const uint16_t *)(src_fb + (size_t)row * row_bytes);
-        copy_swap_u16((uint16_t *)ctx->dma_buf, src, (size_t)width * block);
+        copy_swap_u16((uint16_t *)ctx->dma_buf[i % 2], src, (size_t)width * block);
 
         uint32_t y = ctx->y_offset + row;
         esp_err_t ret = esp_lcd_panel_draw_bitmap(
-            panel, x, y, x + width, y + block, ctx->dma_buf);
+            panel, x, y, x + width, y + block, ctx->dma_buf[i % 2]);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "draw_bitmap failed: %s", esp_err_to_name(ret));
             return false;
@@ -202,13 +202,13 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
             ctx->dma_stripe_lines = DMA_STRIPE_LINES_DEFAULT;
             while (ctx->dma_stripe_lines >= DMA_STRIPE_LINES_MIN) {
                 size_t stripe_size = width * ctx->dma_stripe_lines * 2;
-                ctx->dma_buf = heap_caps_aligned_alloc(
+                ctx->dma_buf[0] = heap_caps_aligned_alloc(
                     DMA_BUF_ALIGN, stripe_size,
                     MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-                if (ctx->dma_buf) break;
+                if (ctx->dma_buf[0]) break;
                 ctx->dma_stripe_lines /= 2;
             }
-            if (!ctx->dma_buf) {
+            if (!ctx->dma_buf[0]) {
                 ESP_LOGE(TAG, "Failed to allocate DMA stripe buffer");
                 ctx->dummy_draw = false;
                 ctx->cam_buf = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -219,6 +219,9 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
                 }
                 memset(ctx->cam_buf, 0, buf_size);
             } else {
+                ctx->dma_buf[1] = heap_caps_aligned_alloc(
+                    DMA_BUF_ALIGN, width * ctx->dma_stripe_lines * 2,
+                    MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
                 ESP_LOGI(TAG, "DMA stripe buffer: %"PRIu32" lines (%zu bytes, internal RAM)",
                          ctx->dma_stripe_lines, (size_t)(width * ctx->dma_stripe_lines * 2));
             }
@@ -250,9 +253,9 @@ static void *lvgl_display_init(void *parent, uint32_t width, uint32_t height,
                 size_t dma_buf_size = width * ctx->dma_stripe_lines * 2;
                 uint8_t *clear_buf = NULL;
                 bool free_clear_buf = false;
-                if (ctx->dma_buf && clear_buf_size <= dma_buf_size) {
+                if (ctx->dma_buf[0] && clear_buf_size <= dma_buf_size) {
                     /* DMA buffer is large enough for panel-wide clear */
-                    clear_buf = ctx->dma_buf;
+                    clear_buf = ctx->dma_buf[0];
                     memset(clear_buf, 0, clear_buf_size);
                 } else {
                     /* DMA buffer too small or absent — use temporary PSRAM buffer */
@@ -320,8 +323,11 @@ static void lvgl_display_deinit(void *handle)
         lvgl_port_unlock();
     }
 
-    if (ctx->dma_buf) {
-        heap_caps_free(ctx->dma_buf);
+    if (ctx->dma_buf[0]) {
+        heap_caps_free(ctx->dma_buf[0]);
+    }
+    if (ctx->dma_buf[1]) {
+        heap_caps_free(ctx->dma_buf[1]);
     }
     if (ctx->cam_buf) {
         heap_caps_free(ctx->cam_buf);

@@ -56,10 +56,32 @@
 #define BOARD_LVGL_MAX_SLEEP_MS     500
 #define BOARD_LVGL_TIMER_PERIOD_MS  5
 
-/* ── Peripherals not present ── */
+/* ── Camera (DVP) ── */
 #ifndef BOARD_HAS_CAMERA
-#define BOARD_HAS_CAMERA            0
+#define BOARD_HAS_CAMERA            1
 #endif
+#define BOARD_CAMERA_INTERFACE      CAMERA_DVP
+#define BOARD_PIN_CAM_XCLK          GPIO_NUM_8
+#define BOARD_PIN_CAM_PCLK          GPIO_NUM_9
+#define BOARD_PIN_CAM_VSYNC         GPIO_NUM_6
+#define BOARD_PIN_CAM_HREF          GPIO_NUM_4
+#define BOARD_PIN_CAM_SIOD          GPIO_NUM_21
+#define BOARD_PIN_CAM_SIOC          GPIO_NUM_16
+#define BOARD_PIN_CAM_Y2            GPIO_NUM_12
+#define BOARD_PIN_CAM_Y3            GPIO_NUM_13
+#define BOARD_PIN_CAM_Y4            GPIO_NUM_15
+#define BOARD_PIN_CAM_Y5            GPIO_NUM_11
+#define BOARD_PIN_CAM_Y6            GPIO_NUM_14
+#define BOARD_PIN_CAM_Y7            GPIO_NUM_10
+#define BOARD_PIN_CAM_Y8            GPIO_NUM_7
+#define BOARD_PIN_CAM_Y9            GPIO_NUM_2
+#define BOARD_PIN_CAM_PWDN          GPIO_NUM_17
+#define BOARD_PIN_CAM_RESET         GPIO_NUM_NC
+#define BOARD_CAM_XCLK_FREQ        (20 * 1000 * 1000)
+#define BOARD_CAM_LEDC_TIMER       LEDC_TIMER_1
+#define BOARD_CAM_LEDC_CHANNEL     LEDC_CHANNEL_1
+
+/* ── Peripherals not present ── */
 #ifndef BOARD_HAS_SDCARD
 #define BOARD_HAS_SDCARD            0
 #endif
