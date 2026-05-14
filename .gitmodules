@@ -1,3 +1,6 @@
 [submodule "components/esp-camera-pipeline"]
 	path = components/esp-camera-pipeline
 	url = https://gitlab.com/kdmukAI-bot/esp-camera-pipeline.git
+[submodule "components/k_quirc"]
+	path = components/k_quirc
+	url = https://github.com/odudex/k_quirc.git

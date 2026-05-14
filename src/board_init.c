@@ -326,7 +326,7 @@ static void lvgl_port_setup(const board_app_config_t *app_cfg,
 #if BOARD_DISPLAY_DRIVER != DISPLAY_ST7701 && !BOARD_DISPLAY_QUIRK_RASET_BUG
     if (landscape) {
         esp_lcd_panel_swap_xy(panel_handle, true);
-        esp_lcd_panel_mirror(panel_handle, true, false);
+        esp_lcd_panel_mirror(panel_handle, false, true);
     } else {
 #if defined(BOARD_DISPLAY_MIRROR_X) && BOARD_DISPLAY_MIRROR_X
         esp_lcd_panel_mirror(panel_handle, true, false);
@@ -453,8 +453,8 @@ int board_init(const board_app_config_t *app_cfg,
     touch_handle = board_touch_cst816d_init(i2c_bus, touch_x_max, touch_y_max);
     if (landscape) {
         touch_handle->config.flags.swap_xy = 1;
-        touch_handle->config.flags.mirror_x = 1;
-        touch_handle->config.flags.mirror_y = 0;
+        touch_handle->config.flags.mirror_x = 0;
+        touch_handle->config.flags.mirror_y = 1;
     }
 #elif BOARD_TOUCH_DRIVER == TOUCH_GT911
     touch_handle = board_touch_gt911_init(i2c_bus, touch_x_max, touch_y_max);

@@ -1,4 +1,4 @@
-#define MICROPY_TASK_STACK_SIZE             (24 * 1024)
+#define MICROPY_TASK_STACK_SIZE             (30 * 1024)
 #define MICROPY_PY_SYS_EXC_INFO             (1)
 
 #include <mpconfigport.h>

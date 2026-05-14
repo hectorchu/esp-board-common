@@ -70,9 +70,15 @@ esp_err_t board_camera_init(void *i2c_bus, uint16_t width, uint16_t height)
 
     sensor_t *s = esp_camera_sensor_get();
     s->set_hmirror(s, 1);
+    s->set_vflip(s, 1);
 
     ESP_LOGI(TAG, "DVP camera initialized (%dx%d)", width, height);
     return ESP_OK;
+}
+
+esp_err_t board_camera_deinit(void)
+{
+    return esp_camera_deinit();
 }
 
 esp_err_t board_camera_fb_get(board_camera_frame_t *frame, uint32_t timeout_ms)

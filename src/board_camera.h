@@ -45,6 +45,8 @@ typedef struct {
  */
 esp_err_t board_camera_init(void *i2c_bus, uint16_t width, uint16_t height);
 
+esp_err_t board_camera_deinit(void);
+
 /**
  * Get the next camera frame.  Blocks until a frame is available or timeout.
  *

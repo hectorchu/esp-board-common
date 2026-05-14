@@ -63,6 +63,8 @@
 #define BOARD_PIN_CAM_PCLK          GPIO_NUM_41
 #define BOARD_PIN_CAM_VSYNC         GPIO_NUM_17
 #define BOARD_PIN_CAM_HREF          GPIO_NUM_18
+#define BOARD_PIN_CAM_SIOD          -1
+#define BOARD_PIN_CAM_SIOC          -1
 #define BOARD_PIN_CAM_Y2            GPIO_NUM_45
 #define BOARD_PIN_CAM_Y3            GPIO_NUM_47
 #define BOARD_PIN_CAM_Y4            GPIO_NUM_48
